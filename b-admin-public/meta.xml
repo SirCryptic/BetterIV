@@ -1,0 +1,9 @@
+<meta>
+	<info title="b-admin" author="SirCryptic" version="1.0" description="Better Admin Management For GTA IV Connected - Public Version" />
+
+	<script src="server.js" type="server" language="javascript" />
+	<script src="client.js" type="client" language="javascript" />
+
+	<file src="fonts/pricedown.ttf" type="client" />
+	<file src="fonts/aurora-bold-condensed.ttf" type="client" />
+</meta>

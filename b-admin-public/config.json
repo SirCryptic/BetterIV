@@ -1,0 +1,41 @@
+﻿{
+	"blockedScripts": [
+		[],
+		[],
+		[],
+		[],
+		[],
+		[],
+		[]
+	],
+	"commandLevels": {
+		"kick": 1,
+		"msay": 1,
+		"scripts": 1,
+		"ban": 2,
+		"unban": 2,
+		"a": 1,
+		"announce": 1,
+		"blockscript": 1,
+		"makeadmin": 2,
+		"makemod": 2,
+		"trainers": 1,
+		"ip": 1,
+		"geoip": 2,
+		"reloadbans": 1,
+		"reloadplayers": 1,
+		"tempban": 1,
+		"listplayers": 1,
+		"disableweapons": 1,
+		"m": 1,
+		"w": 2,
+		"wsay": 2,
+		"banlist": 1,
+		"emotes": 0
+	},
+	"geoip": {
+		"countryFile": "geoip/GeoLite2-Country.mmdb",
+		"subDivisionFile": "geoip/GeoLite2-City.mmdb",
+		"cityFile": "geoip/GeoLite2-City.mmdb"
+	}
+}
