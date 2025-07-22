@@ -1,6 +1,6 @@
 # GTA Connected Admin Script
 
-This is a complete rewrite of the [Vortex v-admin script](https://github.com/VortrexFTW/v-essentials/tree/master/v-admin) for GTA Connected (GTA IV), designed for public use with enhanced features and a streamlined codebase. Certain features from the original, such as making other players dance or killing them, have been stripped to focus on core administrative functionality. This script provides robust server management tools for administrators and moderators, including player management, bans, and chat enhancements.
+This is a complete rewrite of the [Vortex v-admin script](https://github.com/VortrexFTW/v-essentials/tree/master/v-admin) for GTA Connected (GTA IV), designed for public use with enhanced features and a streamlined codebase. Certain features from my private version, such as making other players dance or killing them, have been stripped to focus on core administrative functionality. This script provides robust server management tools for administrators and moderators, including player management, bans, and chat enhancements.
 
 ## Features
 
