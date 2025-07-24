@@ -9,7 +9,7 @@
 		[],
 		[]
 	],
-	"serverToken": "",
+	"serverToken": "your_random_32_char_token_here",
 	"commandLevels": {
 		"kick": 1,
 		"msay": 1,
