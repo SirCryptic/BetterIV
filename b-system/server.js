@@ -79,7 +79,6 @@ addEventHandler("OnPlayerJoined", (event, client) => {
 
     client.setData("connectTime", new Date().getTime());
     messageClient(`Welcome to ${server.name}!`, client, welcomeMessageColour);
-    messageClient(`F1 = Player Manager | F3 = Vehicle Menu`, client, COLOUR_YELLOW);
 
     let messageText = `${client.name} [#FFFFFF]has joined the game.👋`;
     if (typeof module.geoip != "undefined") {
