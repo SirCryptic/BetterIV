@@ -1,4 +1,5 @@
 ﻿{
+	"admins": [],
 	"blockedScripts": [
 		[],
 		[],
@@ -8,6 +9,7 @@
 		[],
 		[]
 	],
+	"serverToken": "",
 	"commandLevels": {
 		"kick": 1,
 		"msay": 1,
@@ -22,16 +24,16 @@
 		"trainers": 1,
 		"ip": 1,
 		"geoip": 2,
+		"reloadadmins": 2,
 		"reloadbans": 1,
 		"reloadplayers": 1,
 		"tempban": 1,
 		"listplayers": 1,
 		"disableweapons": 1,
 		"m": 1,
-		"w": 2,
 		"wsay": 2,
-		"banlist": 1,
-		"emotes": 0
+		"emotes": 0,
+		"banlist": 1
 	},
 	"geoip": {
 		"countryFile": "geoip/GeoLite2-Country.mmdb",
