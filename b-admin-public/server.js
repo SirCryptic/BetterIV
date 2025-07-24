@@ -108,15 +108,31 @@ function escapeRegExp(string) {
 }
 
 addEventHandler("OnPlayerChat", function(event, client, chatMessage) {
-    event.preventDefault(); // Prevent default server logging
+    event.preventDefault();
+    if (!client || !chatMessage) return false;
+
     const processedMessage = processEmotes(chatMessage);
-    const formattedMessage = `${client.name}: ${processedMessage}`;
-    console.log(`[CHAT] ${formattedMessage}`); // Log processed message only
+    const playerColour = client.getData("b.colour") || COLOUR_WHITE;
+    const playerName = client.getData("b.name") || client.name || "Unknown";
+    const adminLevel = getPlayerAdminLevel(client);
+    let tag = "";
+    if (adminLevel === 1) {
+        tag = "[MOD] ";
+    } else if (adminLevel >= 2) {
+        tag = "[OWNER] ";
+    }
+    const formattedMessage = `${tag}${playerName}: [#FFFFFF]${processedMessage}`;
+
+    console.log(`[CHAT] ${tag}${client.name}: ${processedMessage}`);
+
     getClients().forEach((otherClient) => {
-        messageClient(formattedMessage, otherClient, COLOUR_WHITE); // Send to all clients
+        // Send entire message in one color (e.g., player's color)
+        messageClient(formattedMessage, otherClient, playerColour);
     });
-    return false; // Prevent original message propagation
+
+    return false;
 });
+
 
 addCommandHandler("emotes", function(command, params, client) {
     if (getPlayerAdminLevel(client) < getLevelForCommand(command)) {
@@ -955,6 +971,7 @@ addCommandHandler("disableweapons", (command, params, client) => {
     return true;
 });
 
+// ----------------------------------------------------------------------------
 
 addCommandHandler("ip", (command, params, client) => {
     if (client.getData("b.admin") < getLevelForCommand(command)) {
@@ -1070,7 +1087,6 @@ addCommandHandler("reloadplayers", (command, params, client) => {
 });
 
 // ----------------------------------------------------------------------------
-
 
 function checkExpiredBans() {
     let currentTime = Date.now();
