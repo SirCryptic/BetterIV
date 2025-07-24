@@ -140,7 +140,7 @@ addCommandHandler("emotes", function(command, params, client) {
 });
 
 addEventHandler("OnPlayerJoined", function(event, client) {
-    console.log(` CONNECT: ${client.name} (${client.ip}) is attempting to connect`);
+    console.log(`CONNECT: ${client.name} (${client.ip}) is attempting to connect`);
     if (typeof gta != "undefined") {
         sendClientBlockedScripts(client);
     }
@@ -955,7 +955,6 @@ addCommandHandler("disableweapons", (command, params, client) => {
     return true;
 });
 
-// ----------------------------------------------------------------------------
 
 addCommandHandler("ip", (command, params, client) => {
     if (client.getData("b.admin") < getLevelForCommand(command)) {
@@ -1072,6 +1071,7 @@ addCommandHandler("reloadplayers", (command, params, client) => {
 
 // ----------------------------------------------------------------------------
 
+
 function checkExpiredBans() {
     let currentTime = Date.now();
     let removedBans = [];
@@ -1187,7 +1187,7 @@ function getClientFromParams(params, log = true) {
         if (log) {
             console.log(`getClientFromParams: Multiple clients match '${params}': ${partialMatches.map(c => c.name).join(", ")}`);
         }
-        return null; // Require exact match or ID for multiple Matches
+        return null; // Require exact match or ID for multiple matches
     }
 
     // Check for IP match
@@ -1397,10 +1397,10 @@ function requestGameScripts(targetClient) {
 addNetworkHandler("receiveGameScripts", function (fromClient, gameScripts) {
     if (!returnScriptsToClient) {
         return false;
-        }
+    }
 
     if (returnScriptsToClient.console) {
-        messageClient(`${fromClient.name}'s game scripts: ${fromClient.name}, ${gameScripts.join(", ")}`, returnScriptsToClient, COLOUR_AQUA);
+        messageClient(`${fromClient.name}'s game scripts: ${gameScripts.join(", ")}`, returnScriptsToClient, COLOUR_AQUA);
     } else {
         messageClient(`${fromClient.name}'s game scripts: [#FFFF00]${gameScripts.join("[#CCCC00], [#FFFF00]")}`, returnScriptsToClient, COLOUR_AQUA);
     }
@@ -1410,7 +1410,6 @@ addNetworkHandler("receiveGameScripts", function (fromClient, gameScripts) {
 
 function addBlockedScript(scriptName) {
     scriptConfig.blockedScripts[server.game].push(scriptName);
-    sendClientBlockedScripts(null);
     sendClientBlockedScripts(null);
     saveConfig({ silent: true });
 }
@@ -1565,6 +1564,7 @@ function areTrainersEnabledForEverybody() {
 }
 
 // ----------------------------------------------------------------------------
+
 function getLevelForCommand(command) {
     if (typeof scriptConfig.commandLevels[command.toLowerCase()] == "undefined") {
         messageAdmins(`Command level for '${command}' is not defined in config.json`);
