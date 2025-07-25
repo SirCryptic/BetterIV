@@ -3,6 +3,8 @@
 - AFK System 
 - Random Player colors ( The color also reflects in chat and scoreboard 👍 )
 
+⚠️(note: please create empty folders within this one called reports & bugreports )
+
 example:
 
 <img width="476" height="113" alt="image" src="https://github.com/user-attachments/assets/ea31796a-30a8-40d3-8646-e26d6aa7fb10" />
