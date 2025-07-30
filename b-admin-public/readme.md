@@ -32,6 +32,7 @@ This is a complete rewrite of the [Vortex v-admin script](https://github.com/Vor
 - `/announce <message>`: Broadcasts a message to all players (Admin Level 1).
 - `/makeadmin <username>`: Grants admin status to a player (Admin Level 2).
 - `/makemod <username>`: Grants moderator status to a player (Admin Level 2).
+- `/demote  [ID:<number>]/name/ip`: removes admin/mod status of a player.
 - `/trainers name`: Toggles trainers for a player (GTA IV only, Admin Level 1).
 - `/disableweapons [ID:<number>]/name/ip/token`: Toggles weapons for a player (GTA Connected only, Admin Level 1).
 - `/ip [ID:<number>]/name/ip/token`: Retrieves a player's IP address (Admin Level 1).
