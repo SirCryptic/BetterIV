@@ -6,30 +6,30 @@ let scriptConfig = null;
 let playersData = null;
 let logMessagePrefix = "ADMIN:";
 let returnScriptsToClient = null;
+let joinAttempts = new Map();
 const errorMessageColour = COLOUR_RED; // Define error message color
 const adminLogFile = "log.json"; // File for admin command logs
 const playersFile = "players.json"; // File for player data
 
 // ----------------------------------------------------------------------------
-
 bindEventHandler("onResourceStart", thisResource, (event, resource) => {
     loadConfig();
     loadPlayers();
-    server.unbanAllIPs();
-    applyBansToServer();
+    server.unbanAllIPs(); // Clear server ban list
+    applyBansToServer(); // Reapply from players.json
     applyPlayerPermissions();
     collectAllGarbage();
 
     // Start timer to check for expired temp bans
     setInterval(checkExpiredBans, 60000); // Check every minute
 
-    // Initialize admin log file as a JSON array
+    // Initialize admin log file
     let logFileContent = loadTextFile(adminLogFile);
     if (!logFileContent || logFileContent.trim() === "") {
         saveTextFile(adminLogFile, JSON.stringify([{ timestamp: new Date().toISOString(), client: "System", ip: "0.0.0.0", command: "server", params: "", details: "Server started" }], null, '\t'));
     } else {
         try {
-            JSON.parse(logFileContent); // Validate JSON
+            JSON.parse(logFileContent);
         } catch (e) {
             console.log(`Invalid JSON in ${adminLogFile}. Initializing new log file.`);
             saveTextFile(adminLogFile, JSON.stringify([{ timestamp: new Date().toISOString(), client: "System", ip: "0.0.0.0", command: "server", params: "", details: "Server started" }], null, '\t'));
@@ -114,16 +114,9 @@ addEventHandler("OnPlayerChat", function(event, client, chatMessage) {
     const processedMessage = processEmotes(chatMessage);
     const playerColour = client.getData("b.colour") || COLOUR_WHITE;
     const playerName = client.getData("b.name") || client.name || "Unknown";
-    const adminLevel = getPlayerAdminLevel(client);
-    let tag = "";
-    if (adminLevel === 1) {
-        tag = "[MOD] ";
-    } else if (adminLevel >= 2) {
-        tag = "[OWNER] ";
-    }
-    const formattedMessage = `${tag}${playerName}: [#FFFFFF]${processedMessage}`;
+    const formattedMessage = `${playerName}: [#FFFFFF]${processedMessage}`;
 
-    console.log(`[CHAT] ${tag}${client.name}: ${processedMessage}`);
+    console.log(`[CHAT] ${client.name}: ${processedMessage}`);
 
     getClients().forEach((otherClient) => {
         // Send entire message in one color (e.g., player's color)
@@ -157,64 +150,35 @@ addCommandHandler("emotes", function(command, params, client) {
 
 addEventHandler("OnPlayerJoined", function(event, client) {
     console.log(`CONNECT: ${client.name} (${client.ip}) is attempting to connect`);
-    if (typeof gta != "undefined") {
-        sendClientBlockedScripts(client);
-    }
-    const playerToken = generateRandomString(128);
-    client.setData("b.token", playerToken, true);
 
-    let playerIndex = Array.isArray(playersData) ? playersData.findIndex(p => p.name.toLowerCase() === client.name.toLowerCase() || p.ip === client.ip || p.token === playerToken) : -1;
-    if (playerIndex !== -1) {
-        playersData[playerIndex].ip = client.ip;
-        playersData[playerIndex].token = playerToken;
-    } else {
-        playersData.push({
-            name: escapeJSONString(client.name),
-            ip: client.ip,
-            token: playerToken,
-            bans: null,
-            trainers: { status: areTrainersEnabledForEverybody(), addedBy: "System" },
-            weapons: { status: true, addedBy: "System" },
-            admin: null
-        });
+    // Rate limiting: Track join attempts per IP
+    const ip = client.ip;
+    let attempts = joinAttempts.get(ip) || 0;
+    joinAttempts.set(ip, attempts + 1);
+    setTimeout(() => joinAttempts.set(ip, (joinAttempts.get(ip) || 1) - 1), 60000); // Reset after 1 min
+    if (attempts > 5) {
+        messageClient("Too many join attempts. Please try again later.", client, errorMessageColour);
+        client.disconnect();
+        messageAdmins(`Rate limit hit for IP ${ip} (${client.name}). Possible spam or evasion attempt.`);
+        logAdminAction(client, "join_attempt", "", `Rate limit exceeded for IP ${ip}`);
+        return;
     }
-    savePlayers();
 
-    const playerData = playersData.find(p => p.token === playerToken);
-    if (typeof client.trainers != "undefined") {
-        client.trainers = playerData.trainers ? playerData.trainers.status : areTrainersEnabledForEverybody();
+    // Check for bans (single IP or range)
+    const currentTime = Date.now();
+    const matchingBan = playersData.find(p => p.bans && (!p.bans.expireTime || currentTime < p.bans.expireTime) && isIPInRange(client.ip, p.ip));
+    if (matchingBan) {
+        messageClient(`You are banned! Reason: ${matchingBan.bans.reason} (By: ${matchingBan.bans.admin})${matchingBan.bans.expireTime ? ` Expires: ${new Date(matchingBan.bans.expireTime).toLocaleString('en-GB')}` : ""}`, client, errorMessageColour);
+        server.banIP(client.ip, 0); // Ban exact IP for redundancy
+        client.disconnect();
+        messageAdmins(`Banned player ${client.name} [IP: ${client.ip}] attempted to join (matched ${matchingBan.name || matchingBan.ip}, Reason: ${matchingBan.bans.reason}).`);
+        logAdminAction(client, "join_attempt", "", `Banned join attempt (matched ${matchingBan.name || matchingBan.ip}, Reason: ${matchingBan.bans.reason})`);
+        return;
     }
-    const weaponStatus = playerData.weapons ? playerData.weapons.status : true;
-    client.setData("b.weapons", weaponStatus, true);
-    triggerNetworkEvent("b.admin.weapons", client, weaponStatus);
+
+    // Trigger token request from client
     triggerNetworkEvent("b.admin.token", client, scriptConfig.serverToken);
-    messageAdmins(`[JOIN] Player ${client.name} connected (IP: ${client.ip})`);
-    setTimeout(() => {
-        const welcomeMsg = processEmotes(`Welcome ${client.name}! :) Use /help to see available commands :D`);
-        messageClient(`${welcomeMsg}`, client, COLOUR_LIME);
-    }, 3000);
 });
-
-function logAdminAction(client, command, params, details = "") {
-    let logFileContent = loadTextFile(adminLogFile);
-    let logArray = [];
-    try {
-        logArray = JSON.parse(logFileContent) || [];
-    } catch (e) {
-        console.log(`Error parsing ${adminLogFile}: ${e.message}. Starting new log array.`);
-        logArray = [];
-    }
-    logArray.push({
-        timestamp: new Date().toISOString(),
-        client: client.name,
-        ip: client.ip,
-        command: command,
-        params: params,
-        details: details
-    });
-    saveTextFile(adminLogFile, JSON.stringify(logArray, null, '\t'));
-}
-
 // ----------------------------------------------------------------------------
 
 addCommandHandler("adminhelp", (command, params, client) => {
@@ -238,6 +202,7 @@ addCommandHandler("adminhelp", (command, params, client) => {
             else if (cmd === "announce") usage = "/announce <message>";
             else if (cmd === "makeadmin") usage = "/makeadmin <username>";
             else if (cmd === "makemod") usage = "/makemod <username>";
+            else if (cmd === "demote") usage = "/demote [ID:<number>]/name/ip/token";
             else if (cmd === "scripts") usage = "/scripts [ID:<number>]/name/ip/token";
             else if (cmd === "blockscript") usage = "/blockscript <script>";
             else if (cmd === "trainers") usage = "/trainers name";
@@ -285,9 +250,12 @@ addCommandHandler("consolehelp", (command, params, client) => {
         { usage: "kick [ID:<number>]/name/ip/token", description: "Kicks a player from the server" },
         { usage: "ban [ID:<number>]/name/ip/token [reason]", description: "Permanently bans a player by ID, name, IP, or token" },
         { usage: "tempban [ID:<number>]/name/ip/token <minutes> [reason]", description: "Temporarily bans a player for specified minutes" },
+        { usage: "demote [ID:<number>]/name/ip/token", description: "Demotes an admin/mod to level 0" },
+        { usage: "makeadmin [ID:<number>]/name/ip/token", description: "Makes Player Admin level 2" },
+        { usage: "makemod [ID:<number>]/name/ip/token", description: "Makes Player Moderator level 1" },
         { usage: "unban name/ip/token", description: "Removes a ban by player name, IP, or token" },
         { usage: "banlist", description: "Lists all active bans with details" },
-        { usage: "trainers name", description: "Toggles trainers for a player" },
+        { usage: "trainers [ID:<number>]/name/ip/token", description: "Toggles trainers for a player" },
         { usage: "disableweapons [ID:<number>]/name/ip/token", description: "Toggles weapons for a player" },
         { usage: "reloadplayers", description: "Reloads player data from players.json" }
     ].map(cmd => `${cmd.usage} - ${cmd.description}`).join("\n");
@@ -443,7 +411,6 @@ addCommandHandler("scripts", (command, params, client) => {
 });
 
 // ----------------------------------------------------------------------------
-
 addCommandHandler("ban", (command, params, client) => {
     if (!client.console && getPlayerAdminLevel(client) < getLevelForCommand(command)) {
         messageClient("You are not authorized to use this command!", client, errorMessageColour);
@@ -451,7 +418,7 @@ addCommandHandler("ban", (command, params, client) => {
     }
 
     if (!params || params.trim() === "") {
-        const errorMsg = "Usage: ban [ID:<number>]/name/ip/token [reason] - Permanently bans a player";
+        const errorMsg = "Usage: ban [ID:<number>]/name/ip/token/range [reason] - Bans a player or IP range forever";
         client.console ? console.log(errorMsg) : messageClient(errorMsg, client, errorMessageColour);
         return false;
     }
@@ -459,10 +426,54 @@ addCommandHandler("ban", (command, params, client) => {
     let splitParams = params.split(" ");
     let targetParams = splitParams[0];
     let reasonParams = splitParams.slice(1).join(" ");
-    let targetClient = getClientFromParams(targetParams, true);
+    let isRange = targetParams.includes('/') || targetParams.includes('*');
 
+    if (!reasonParams) {
+        const errorMsg = "Reason is required for bans.";
+        client.console ? console.log(errorMsg) : messageClient(errorMsg, client, errorMessageColour);
+        return false;
+    }
+
+    const duration = 999999999; // minutes (~1900 years)
+    const expireTime = Date.now() + (duration * 60 * 1000);
+
+    if (isRange) {
+        if (targetParams.includes('/') && !isValidCIDR(targetParams)) {
+            messageClient("Invalid CIDR range (bits must be 0-32).", client, errorMessageColour);
+            return false;
+        }
+        playersData.push({
+            name: `RangeBan_${targetParams.replace(/[^a-z0-9]/gi, '_')}`,
+            ip: targetParams,
+            token: generateRandomString(128),
+            bans: {
+                reason: escapeJSONString(reasonParams),
+                admin: escapeJSONString(client.console ? "Console" : client.name),
+                timeStamp: new Date().toLocaleDateString('en-GB'),
+                expireTime: expireTime
+            },
+            trainers: null,
+            weapons: null,
+            admin: null
+        });
+        saveTextFile("players_backup.json", JSON.stringify(playersData, null, '\t'));
+        savePlayers();
+        logAdminAction(client, command, params, `Banned IP range ${targetParams} forever. Reason: ${reasonParams}`);
+        const successMsg = `Successfully banned IP range ${targetParams} forever. Reason: ${reasonParams}`;
+        client.console ? console.log(successMsg) : messageClient(successMsg, client, COLOUR_YELLOW);
+        messageAdmins(`IP range ${targetParams} has been banned by ${client.console ? "Console" : client.name} forever! Reason: ${reasonParams}`);
+        getClients().forEach(c => {
+            if (isIPInRange(c.ip, targetParams)) {
+                messageClient(`You have been banned forever! Reason: ${reasonParams}`, c, errorMessageColour);
+                c.disconnect();
+            }
+        });
+        return true;
+    }
+
+    let targetClient = getClientFromParams(targetParams, true);
     if (targetClient == null) {
-        const errorMsg = `No player found with ID, name, IP, or token '${params}'. Use /listplayers to see connected players.`;
+        const errorMsg = `No player found with ID, name, IP, or token '${targetParams}'. Use /listplayers to see connected players.`;
         client.console ? console.log(errorMsg) : messageClient(errorMsg, client, errorMessageColour);
         return false;
     }
@@ -488,24 +499,25 @@ addCommandHandler("ban", (command, params, client) => {
     }
     playersData[playerIndex].bans = {
         reason: escapeJSONString(reasonParams),
-        admin: escapeJSONString(client.name),
-        timeStamp: new Date().toLocaleDateString('en-GB')
+        admin: escapeJSONString(client.console ? "Console" : client.name),
+        timeStamp: new Date().toLocaleDateString('en-GB'),
+        expireTime: expireTime
     };
     playersData[playerIndex].ip = targetClient.ip;
+    saveTextFile("players_backup.json", JSON.stringify(playersData, null, '\t'));
     savePlayers();
-    logAdminAction(client, command, params, `Banned ${targetClient.name} [ID:${targetClient.index}, IP: ${targetClient.ip}] Reason: ${reasonParams || "No reason provided"}`);
-    const successMsg = `Successfully banned ${targetClient.name} [ID:${targetClient.index}, IP: ${targetClient.ip}]${reasonParams ? ` Reason: ${reasonParams}` : ""}`;
+    logAdminAction(client, command, params, `Banned ${targetClient.name} [ID:${targetClient.index}, IP: ${targetClient.ip}] forever. Reason: ${reasonParams}`);
+    const successMsg = `Successfully banned ${targetClient.name} [ID:${targetClient.index}, IP: ${targetClient.ip}] forever. Reason: ${reasonParams}`;
     client.console ? console.log(successMsg) : messageClient(successMsg, client, COLOUR_YELLOW);
-    messageAdmins(`${targetClient.name} [ID:${targetClient.index}] (IP: ${targetClient.ip}) has been banned by ${client.name}! Reason: ${reasonParams || "No reason provided"}`);
-    console.log(`ban cmd executed by ${client.name}: Banned ${targetClient.name} [ID:${targetClient.index}, IP: ${targetClient.ip}] Reason: ${reasonParams || "No reason provided"}`);
-    server.banIP(targetClient.ip, 0);
+    messageAdmins(`${targetClient.name} [ID:${targetClient.index}] (IP: ${targetClient.ip}) has been banned by ${client.console ? "Console" : client.name} forever! Reason: ${reasonParams}`);
+    console.log(`ban cmd executed by ${client.console ? "Console" : client.name}: Banned ${targetClient.name} [ID:${targetClient.index}, IP: ${targetClient.ip}] forever. Reason: ${reasonParams}`);
+    server.banIP(targetClient.ip, duration * 60);
     triggerNetworkEvent("b.admin.token.save", targetClient, playerToken, scriptConfig.serverToken);
+    messageClient(`You have been banned forever! Reason: ${reasonParams}`, targetClient, errorMessageColour);
     targetClient.disconnect();
     return true;
 });
-
 // ----------------------------------------------------------------------------
-
 addCommandHandler("tempban", (command, params, client) => {
     if (!client.console && getPlayerAdminLevel(client) < getLevelForCommand(command)) {
         messageClient("You are not authorized to use this command!", client, errorMessageColour);
@@ -513,7 +525,7 @@ addCommandHandler("tempban", (command, params, client) => {
     }
 
     if (!params || params.trim() === "") {
-        const errorMsg = "Usage: tempban [ID:<number>]/name/ip/token <minutes> [reason] - Temporarily bans a player";
+        const errorMsg = "Usage: tempban [ID:<number>]/name/ip/token/range <minutes> [reason] - Temporarily bans a player or IP range";
         client.console ? console.log(errorMsg) : messageClient(errorMsg, client, errorMessageColour);
         return false;
     }
@@ -522,16 +534,61 @@ addCommandHandler("tempban", (command, params, client) => {
     let targetParams = splitParams[0];
     let duration = parseInt(splitParams[1]);
     let reasonParams = splitParams.slice(2).join(" ");
-    let targetClient = getClientFromParams(targetParams, true);
+    let isRange = targetParams.includes('/') || targetParams.includes('*');
 
-    if (targetClient == null) {
-        const errorMsg = `No player found with ID, name, IP, or token '${targetParams}'. Use /listplayers to see connected players.`;
+    if (isNaN(duration) || duration <= 0) {
+        const errorMsg = "Duration must be a positive number (in minutes).";
         client.console ? console.log(errorMsg) : messageClient(errorMsg, client, errorMessageColour);
         return false;
     }
 
-    if (isNaN(duration) || duration <= 0) {
-        const errorMsg = "Duration must be a positive number (in minutes).";
+    if (!reasonParams) {
+        const errorMsg = "Reason is required for tempbans.";
+        client.console ? console.log(errorMsg) : messageClient(errorMsg, client, errorMessageColour);
+        return false;
+    }
+
+    if (isRange && targetParams.includes('/') && !isValidCIDR(targetParams)) {
+        messageClient("Invalid CIDR range (bits must be 0-32).", client, errorMessageColour);
+        return false;
+    }
+
+    const expireTime = Date.now() + (duration * 60 * 1000);
+    const expiryDate = new Date(expireTime).toLocaleString('en-GB');
+
+    if (isRange) {
+        playersData.push({
+            name: `RangeTempBan_${targetParams.replace(/[^a-z0-9]/gi, '_')}`,
+            ip: targetParams,
+            token: generateRandomString(128),
+            bans: {
+                reason: escapeJSONString(reasonParams),
+                admin: escapeJSONString(client.console ? "Console" : client.name),
+                timeStamp: new Date().toLocaleDateString('en-GB'),
+                expireTime: expireTime
+            },
+            trainers: null,
+            weapons: null,
+            admin: null
+        });
+        saveTextFile("players_backup.json", JSON.stringify(playersData, null, '\t'));
+        savePlayers();
+        logAdminAction(client, command, params, `Tempbanned IP range ${targetParams} for ${duration} minutes. Reason: ${reasonParams}`);
+        const successMsg = `Successfully tempbanned IP range ${targetParams} for ${duration} minutes until ${expiryDate}. Reason: ${reasonParams}`;
+        client.console ? console.log(successMsg) : messageClient(successMsg, client, COLOUR_YELLOW);
+        messageAdmins(`IP range ${targetParams} has been tempbanned by ${client.console ? "Console" : client.name} for ${duration} minutes until ${expiryDate}! Reason: ${reasonParams}`);
+        getClients().forEach(c => {
+            if (isIPInRange(c.ip, targetParams)) {
+                messageClient(`You have been tempbanned for ${duration} minutes! Reason: ${reasonParams} (Expires: ${expiryDate})`, c, errorMessageColour);
+                c.disconnect();
+            }
+        });
+        return true;
+    }
+
+    let targetClient = getClientFromParams(targetParams, true);
+    if (targetClient == null) {
+        const errorMsg = `No player found with ID, name, IP, or token '${targetParams}'. Use /listplayers to see connected players.`;
         client.console ? console.log(errorMsg) : messageClient(errorMsg, client, errorMessageColour);
         return false;
     }
@@ -555,27 +612,26 @@ addCommandHandler("tempban", (command, params, client) => {
         });
         playerIndex = playersData.length - 1;
     }
-    let expireTime = Date.now() + (duration * 60 * 1000); // Duration in minutes to milliseconds
     playersData[playerIndex].bans = {
         reason: escapeJSONString(reasonParams),
-        admin: escapeJSONString(client.name),
+        admin: escapeJSONString(client.console ? "Console" : client.name),
         timeStamp: new Date().toLocaleDateString('en-GB'),
         expireTime: expireTime
     };
     playersData[playerIndex].ip = targetClient.ip;
+    saveTextFile("players_backup.json", JSON.stringify(playersData, null, '\t'));
     savePlayers();
-    logAdminAction(client, command, params, `Tempbanned ${targetClient.name} [ID:${targetClient.index}, IP: ${targetClient.ip}] for ${duration} minutes. Reason: ${reasonParams || "No reason provided"}`);
-    const expiryDate = new Date(expireTime).toLocaleString('en-GB');
-    const successMsg = `Successfully tempbanned ${targetClient.name} [ID:${targetClient.index}, IP: ${targetClient.ip}] for ${duration} minutes until ${expiryDate}${reasonParams ? ` Reason: ${reasonParams}` : ""}`;
+    logAdminAction(client, command, params, `Tempbanned ${targetClient.name} [ID:${targetClient.index}, IP: ${targetClient.ip}] for ${duration} minutes. Reason: ${reasonParams}`);
+    const successMsg = `Successfully tempbanned ${targetClient.name} [ID:${targetClient.index}, IP: ${targetClient.ip}] for ${duration} minutes until ${expiryDate}. Reason: ${reasonParams}`;
     client.console ? console.log(successMsg) : messageClient(successMsg, client, COLOUR_YELLOW);
-    messageAdmins(`${targetClient.name} [ID:${targetClient.index}] (IP: ${targetClient.ip}) has been temporarily banned by ${client.name} for ${duration} minutes! Reason: ${reasonParams || "No reason provided"}`);
-    console.log(`tempban cmd executed by ${client.name}: Tempbanned ${targetClient.name} [ID:${targetClient.index}, IP: ${targetClient.ip}] for ${duration} minutes. Reason: ${reasonParams || "No reason provided"}`);
-    server.banIP(targetClient.ip, 0);
+    messageAdmins(`${targetClient.name} [ID:${targetClient.index}] (IP: ${targetClient.ip}) has been tempbanned by ${client.console ? "Console" : client.name} for ${duration} minutes until ${expiryDate}! Reason: ${reasonParams}`);
+    console.log(`tempban cmd executed by ${client.console ? "Console" : client.name}: Tempbanned ${targetClient.name} [ID:${targetClient.index}, IP: ${targetClient.ip}] for ${duration} minutes. Reason: ${reasonParams}`);
+    server.banIP(targetClient.ip, duration * 60);
     triggerNetworkEvent("b.admin.token.save", targetClient, playerToken, scriptConfig.serverToken);
+    messageClient(`You have been tempbanned for ${duration} minutes! Reason: ${reasonParams} (Expires: ${expiryDate})`, targetClient, errorMessageColour);
     targetClient.disconnect();
     return true;
 });
-
 // ----------------------------------------------------------------------------
 
 addCommandHandler("unban", (command, params, client) => {
@@ -585,7 +641,7 @@ addCommandHandler("unban", (command, params, client) => {
     }
 
     if (!params || params.trim() === "") {
-        const errorMsg = "Usage: unban name/ip/token - Removes a ban by player name, IP, or token";
+        const errorMsg = "Usage: unban name/ip/token/range - Removes a ban by player name, IP, token, or range";
         client.console ? console.log(errorMsg) : messageClient(errorMsg, client, errorMessageColour);
         return false;
     }
@@ -593,25 +649,34 @@ addCommandHandler("unban", (command, params, client) => {
     logAdminAction(client, command, params);
     let removedBans = [];
     for (let i = playersData.length - 1; i >= 0; i--) {
-        if (playersData[i].bans && (playersData[i].ip === params || playersData[i].name.toLowerCase().includes(params.toLowerCase()) || playersData[i].token === params)) {
-            server.unbanIP(playersData[i].ip);
+        if (playersData[i].bans && (
+            playersData[i].ip === params ||
+            playersData[i].name.toLowerCase().includes(params.toLowerCase()) ||
+            playersData[i].token === params ||
+            (playersData[i].ip.includes('/') || playersData[i].ip.includes('*'))
+        )) {
+            server.unbanIP(playersData[i].ip); // Unban exact IP or range
             let removedBan = playersData[i].bans;
-            playersData[i].bans = null;
             removedBans.push({ name: playersData[i].name, ip: playersData[i].ip, ...removedBan });
+            playersData[i].bans = null;
+            if (playersData[i].name.startsWith('RangeBan_') || playersData[i].name.startsWith('RangeTempBan_')) {
+                playersData.splice(i, 1); // Remove range ban entries
+            }
         }
     }
 
     if (removedBans.length === 0) {
-        const errorMsg = `No bans found for name, IP, or token '${params}'. Use /banlist to see active bans.`;
+        const errorMsg = `No bans found for name, IP, token, or range '${params}'. Use /banlist to see active bans.`;
         client.console ? console.log(errorMsg) : messageClient(errorMsg, client, errorMessageColour);
         return false;
     }
 
+    saveTextFile("players_backup.json", JSON.stringify(playersData, null, '\t')); // Single backup
     savePlayers();
     removedBans.forEach(ban => {
         const successMsg = `Successfully unbanned ${ban.name} [IP: ${ban.ip}]${ban.reason ? ` (Reason: ${ban.reason})` : ""}`;
         client.console ? console.log(successMsg) : messageClient(successMsg, client, COLOUR_YELLOW);
-        messageAdmins(`${ban.name} [IP: ${ban.ip}] has been unbanned by ${client.name}!`);
+        messageAdmins(`${ban.name} [IP: ${ban.ip}] has been unbanned by ${client.console ? "Console" : client.name}!`);
         logAdminAction(client, command, params, `Unbanned ${ban.name} [IP: ${ban.ip}]`);
     });
     return true;
@@ -799,6 +864,70 @@ addCommandHandler("makemod", (command, params, client) => {
 
     messageAdmins(`${client.name} made ${username} a moderator!`);
     savePlayers();
+    return true;
+});
+
+// ----------------------------------------------------------------------------
+// cmd added at the request of don.
+addCommandHandler("demote", (command, params, client) => {
+    if (!client.console && getPlayerAdminLevel(client) < getLevelForCommand(command)) {
+        messageClient("You are not authorized to use this command!", client, errorMessageColour);
+        return false;
+    }
+
+    if (!params || params.trim() === "") {
+        const errorMsg = "Usage: demote [ID:<number>]/name/ip/token - Demotes an admin/mod to level 0";
+        client.console ? console.log(errorMsg) : messageClient(errorMsg, client, errorMessageColour);
+        return false;
+    }
+
+    let targetParams = params.trim();
+    let targetClient = getClientFromParams(targetParams, true);
+    let playerIndex = -1;
+
+    if (targetClient) {
+        // Online player found
+        const playerToken = targetClient.getData("b.token");
+        playerIndex = playersData.findIndex(p => p.token === playerToken);
+    } else {
+        // Offline: search by name/ip/token in playersData
+        playerIndex = playersData.findIndex(p => 
+            p.name.toLowerCase() === targetParams.toLowerCase() ||
+            p.ip === targetParams ||
+            p.token === targetParams
+        );
+    }
+
+    if (playerIndex === -1) {
+        const errorMsg = `No player found with ID, name, IP, or token '${targetParams}'. Use /listplayers for online or check players.json/banlist.`;
+        client.console ? console.log(errorMsg) : messageClient(errorMsg, client, errorMessageColour);
+        return false;
+    }
+
+    if (playersData[playerIndex].admin === null) {
+        const errorMsg = `${playersData[playerIndex].name} is not an admin/mod.`;
+        client.console ? console.log(errorMsg) : messageClient(errorMsg, client, errorMessageColour);
+        return false;
+    }
+
+    // Prevent self-demote
+    if (!client.console && targetClient && targetClient.index === client.index) {
+    messageClient("You cannot demote yourself!", client, errorMessageColour);
+    return false;
+    }
+
+    playersData[playerIndex].admin = null;
+    if (targetClient) {
+        targetClient.setData("b.admin", 0, true);
+    }
+
+    saveTextFile("players_backup.json", JSON.stringify(playersData, null, '\t'));
+    savePlayers();
+    logAdminAction(client, command, params, `Demoted ${playersData[playerIndex].name} to level 0`);
+    const successMsg = `Successfully demoted ${playersData[playerIndex].name}${targetClient ? ` [ID:${targetClient.index}, IP: ${targetClient.ip}]` : " (offline)"} to level 0`;
+    client.console ? console.log(successMsg) : messageClient(successMsg, client, COLOUR_YELLOW);
+    messageAdmins(`${client.console ? "Console" : client.name} demoted ${playersData[playerIndex].name}${targetClient ? ` [ID:${targetClient.index}]` : " (offline)"} to level 0!`);
+    console.log(`demote cmd executed by ${client.console ? "Console" : client.name}: Demoted ${playersData[playerIndex].name} to level 0`);
     return true;
 });
 
@@ -1459,6 +1588,7 @@ function fixMissingConfigStuff() {
             "blockscript": 1,
             "makeadmin": 2,
             "makemod": 2,
+            "demote": 2,
             "trainers": 1,
             "disableweapons": 1,
             "ip": 1,
@@ -1509,66 +1639,99 @@ function generateRandomString(length, characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZab
 
 // ----------------------------------------------------------------------------
 
+// Updated b.admin.token handler (check sent token first, assign new if not present, detect evasion, set permissions)
 addNetworkHandler("b.admin.token", function (fromClient, token) {
     let tokenValid = false;
+    let playerIndex = -1;
+    let playerToken = token;
 
-    const playerData = Array.isArray(playersData) ? playersData.find(p => p.token === fromClient.getData("b.token")) : null;
-    if (typeof fromClient.trainers != "undefined") {
-        fromClient.trainers = playerData && playerData.trainers ? playerData.trainers.status : areTrainersEnabledForEverybody();
+    // If client sent an empty token, generate new
+    if (!playerToken || playerToken === "") {
+        playerToken = generateRandomString(128);
+        triggerNetworkEvent("b.admin.token.save", fromClient, playerToken, scriptConfig.serverToken);
+        fromClient.setData("b.token", playerToken, true);
+    } else {
+        fromClient.setData("b.token", playerToken, true);
     }
 
-    const weaponStatus = playerData && playerData.weapons ? playerData.weapons.status : true;
+    // Look up by token
+    playerIndex = playersData.findIndex(p => p.token === playerToken);
+    if (playerIndex !== -1) {
+        // Token matches existing entry
+        const existingPlayer = playersData[playerIndex];
+        if (existingPlayer.name.toLowerCase() !== fromClient.name.toLowerCase()) {
+            // Evasion: same token, different name (offline name change)
+            messageClient("Ban evasion detected: Name change with same token!", fromClient, errorMessageColour);
+            fromClient.disconnect();
+            messageAdmins(`Ban evasion: ${fromClient.name} [IP: ${fromClient.ip}] used token from ${existingPlayer.name}, disconnected.`);
+            logAdminAction(fromClient, "evasion", "", `Name change with same token (old name: ${existingPlayer.name})`);
+            return false;
+        }
+
+        // Update IP if changed
+        if (existingPlayer.ip !== fromClient.ip) {
+            existingPlayer.ip = fromClient.ip;
+            savePlayers();
+        }
+
+        // Check for bans
+        if (existingPlayer.bans && (!existingPlayer.bans.expireTime || Date.now() < existingPlayer.bans.expireTime)) {
+            messageClient(`You are banned! Reason: ${existingPlayer.bans.reason || "No reason provided"}${existingPlayer.bans.expireTime ? ` (Expires: ${new Date(existingPlayer.bans.expireTime).toLocaleString('en-GB')})` : ""}`, fromClient, errorMessageColour);
+            fromClient.disconnect();
+            messageAdmins(`Banned player ${fromClient.name} [IP: ${fromClient.ip}] attempted to join (matched token).`);
+            logAdminAction(fromClient, "join_attempt", "", `Banned join attempt (matched token)`);
+            return false;
+        }
+    } else {
+        // New token, check for name impersonation or IP match
+        const existingByName = playersData.find(p => p.name.toLowerCase() === fromClient.name.toLowerCase());
+        if (existingByName) {
+            messageAdmins(`Possible impersonation: ${fromClient.name} [IP: ${fromClient.ip}] matches existing name but new token. Expected token: ${existingByName.token}`);
+            logAdminAction(fromClient, "join_attempt", "", `Possible impersonation (matched name, new token)`);
+            // Optionally disconnect or flag
+        }
+
+        const existingByIP = playersData.find(p => p.ip === fromClient.ip);
+        if (existingByIP) {
+            messageAdmins(`Possible evasion: ${fromClient.name} [IP: ${fromClient.ip}] matches existing IP but new token/name. Old name: ${existingByIP.name}`);
+            logAdminAction(fromClient, "join_attempt", "", `Possible evasion (matched IP, new token/name)`);
+            // Optionally disconnect or flag
+        }
+
+        // Create new entry
+        playersData.push({
+            name: escapeJSONString(fromClient.name),
+            ip: fromClient.ip,
+            token: playerToken,
+            bans: null,
+            trainers: { status: areTrainersEnabledForEverybody(), addedBy: "System" },
+            weapons: { status: true, addedBy: "System" },
+            admin: null
+        });
+        savePlayers();
+        playerIndex = playersData.length - 1;
+    }
+
+    // Set permissions
+    const playerData = playersData[playerIndex];
+    if (typeof fromClient.trainers != "undefined") {
+        fromClient.trainers = playerData.trainers ? playerData.trainers.status : areTrainersEnabledForEverybody();
+    }
+    const weaponStatus = playerData.weapons ? playerData.weapons.status : true;
     fromClient.setData("b.weapons", weaponStatus, true);
     triggerNetworkEvent("b.admin.weapons", fromClient, weaponStatus);
 
-    if (playerData && playerData.admin) {
-        if (token && playerData.token === token) {
-            tokenValid = true;
-        } else if (playerData.ip === fromClient.ip || playerData.ip === "0.0.0.0") {
-            tokenValid = true;
-            messageAdmins(`${fromClient.name} has no valid token but IP matches or is placeholder (${playerData.ip}). Granting ${playerData.admin.role} access.`);
-            playerData.ip = fromClient.ip; // Update placeholder IP
-            triggerNetworkEvent("b.admin.token.save", fromClient, playerData.token, scriptConfig.serverToken);
-            savePlayers({ silent: true });
-        }
-    }
-
-    if (tokenValid) {
+    if (playerData.admin) {
         fromClient.setData("b.admin", playerData.admin.level || 1, true);
-        messageAdmins(`${fromClient.name} passed authentication and was given ${playerData.admin.role} permissions!`);
-        logAdminAction(fromClient, "login", "", `Authenticated as ${playerData.admin.role} (Level ${playerData.admin.level})`);
-    } else if (isAdminName(fromClient.name)) {
-        messageAdmins(`${fromClient.name} was kicked from the server because they have an admin/mod name but invalid token or IP.`);
-        messageAdmins(`Either it's somebody trying to impersonate an admin/mod, or it's a legit user using a new/different computer.`);
-        logAdminAction(fromClient, "login", "", `Failed authentication: Invalid token/IP`);
-        fromClient.disconnect();
-        return false;
+        messageAdmins(`${fromClient.name} authenticated as admin (Level ${playerData.admin.level}).`);
+        logAdminAction(fromClient, "login", "", `Authenticated as admin (Level ${playerData.admin.level})`);
     } else {
         fromClient.setData("b.admin", 0, true);
     }
 
-    // Check for bans by token
-    const playerToken = fromClient.getData("b.token");
-    const ban = Array.isArray(playersData) ? playersData.find(p => p.token === playerToken && p.bans && (!p.bans.expireTime || Date.now() < p.bans.expireTime)) : null;
-    if (ban) {
-        messageClient(`You are banned! Reason: ${ban.bans.reason || "No reason provided"}${ban.bans.expireTime ? ` (Expires: ${new Date(ban.bans.expireTime).toLocaleString('en-GB')})` : ""}`, fromClient, errorMessageColour);
-        fromClient.disconnect();
-        return false;
-    }
-
-    // Check for name impersonation
-    const existingPlayer = Array.isArray(playersData) ? playersData.find(p => p.name.toLowerCase() === fromClient.name.toLowerCase() && p.token !== playerToken) : null;
-    if (existingPlayer) {
-        messageAdmins(`${fromClient.name} was kicked from the server because they are using a name that matches an existing player but with a different token.`);
-        messageAdmins(`Possible impersonation attempt or a user on a new device. Expected token: ${existingPlayer.token}, Provided token: ${playerToken}`);
-        logAdminAction(fromClient, "login", "", `Failed authentication: Name matches existing player but token mismatch`);
-        fromClient.disconnect();
-        return false;
-    }
-
+    messageAdmins(`[JOIN] Player ${fromClient.name} connected (IP: ${fromClient.ip})`);
     return true;
 });
-
 // ----------------------------------------------------------------------------
 
 function areTrainersEnabledForEverybody() {
@@ -1611,3 +1774,48 @@ function isPlayerAdmin(client) {
 }
 
 // ----------------------------------------------------------------------------
+function isIPInRange(ip, range) {
+    if (range.includes('*')) { // Wildcard e.g., 192.168.*.*
+        const regex = new RegExp('^' + range.replace(/\./g, '\\.').replace(/\*/g, '\\d+') + '$');
+        return regex.test(ip);
+    } else if (range.includes('/')) { // CIDR e.g., 192.168.1.0/24
+        const [rangeIP, bits] = range.split('/');
+        const mask = (0xffffffff << (32 - parseInt(bits))) >>> 0;
+        const rangeInt = ipToInt(rangeIP) & mask;
+        const ipInt = ipToInt(ip) & mask;
+        return rangeInt === ipInt;
+    }
+    return ip === range; // Single IP fallback
+}
+
+function ipToInt(ip) {
+    return ip.split('.').reduce((acc, octet) => (acc << 8) | parseInt(octet), 0) >>> 0;
+}
+function isValidCIDR(range) {
+    if (!range.includes('/')) return true;
+    const [ip, bits] = range.split('/');
+    const bitsNum = parseInt(bits);
+    if (isNaN(bitsNum) || bitsNum < 0 || bitsNum > 32) return false;
+    const ipParts = ip.split('.').map(Number);
+    return ipParts.length === 4 && ipParts.every(part => !isNaN(part) && part >= 0 && part <= 255);
+}
+// ----------------------------------------------------------------------------
+function logAdminAction(client, command, params, details = "") {
+    let logFileContent = loadTextFile(adminLogFile);
+    let logArray = [];
+    try {
+        logArray = JSON.parse(logFileContent) || [];
+    } catch (e) {
+        console.log(`Error parsing ${adminLogFile}: ${e.message}. Starting new log array.`);
+        logArray = [];
+    }
+    logArray.push({
+        timestamp: new Date().toISOString(),
+        client: client.console ? "Console" : client.name,
+        ip: client.console ? "0.0.0.0" : client.ip,
+        command: command,
+        params: params,
+        details: details
+    });
+    saveTextFile(adminLogFile, JSON.stringify(logArray, null, '\t'));
+}
