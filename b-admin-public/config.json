@@ -1,5 +1,4 @@
 ﻿{
-	"admins": [],
 	"blockedScripts": [
 		[],
 		[],
@@ -21,6 +20,7 @@
 		"blockscript": 1,
 		"makeadmin": 2,
 		"makemod": 2,
+		"demote": 2,
 		"trainers": 1,
 		"ip": 1,
 		"geoip": 2,
