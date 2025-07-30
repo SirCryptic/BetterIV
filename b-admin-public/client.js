@@ -40,7 +40,7 @@ bindEventHandler("onResourceReady", thisResource, function (event, resource) {
                     }
                 } catch (e) {}
             }
-        }, 1000); // Check every 2000ms
+        }, 1000); // Check every second.
     }
 });
 
