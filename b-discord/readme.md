@@ -1,5 +1,4 @@
-# GTA Connected Discord Chat Relay Proxy
-
+# GTA Connected Discord Chat Relay
 This resource provides a relay in-game chat from a GTA Connected server to a Discord channel via a webhook. The resource is reliant on `IV-PROXY` [HERE](https://github.com/sircryptic/iv-proxy) to work with the resource in a GTA Connected server, addressing limitations in the server's `httpGet` function for sending JSON POST requests. The proxy is deployed on [Render](https://render.com) (free tier) and forwards chat messages to a Discord webhook.
 
 This is useful for server owners who want to mirror in-game chat (e.g., `[WizzWow]: test`) to a Discord channel with emoji support (e.g., `:)` → 😊).
