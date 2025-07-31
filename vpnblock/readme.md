@@ -13,7 +13,7 @@ The script checks player IPs on connection, kicks detected VPN/proxy users with 
   - ipapi.is
 - Sends a kick message to players using VPNs/proxies.
 - Caches results to minimize API calls and avoid rate limits.
-- Standalone resource, no dependencies beyond GTA Connected’s JavaScript runtime.
+- Standalone resource.
 
 
 Update Server Configuration:
