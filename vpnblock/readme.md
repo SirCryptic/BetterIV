@@ -56,4 +56,5 @@ Increase CACHE_TIMEOUT (e.g., to 7200 * 1000) if limits are hit.
 
 
 - Notes
+
 Enhancements: For advanced VPN detection, consider a paid service like IPQualityScore (requires sign-up).
