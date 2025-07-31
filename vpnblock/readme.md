@@ -25,8 +25,8 @@ Edit server.xml to include the vpnblock resource:
 
 3. Customize (Optional)
 
-Threshold: Adjust the GetIPIntel.net threshold (default 0.3) for stricter/looser detection:{ url: "http://check.getipintel.net/check.php?ip=%s&format=json&flags=m", threshold: 0.2, key: 'result' }
-
+Threshold: Adjust the GetIPIntel.net threshold (default 0.3) for stricter/looser detection:`{ url: "http://check.getipintel.net/check.php?ip=%s&format=json&flags=m", threshold: 0.2, key: 'result' }
+`
 
 
 4. Test the VPN Blocking
