@@ -56,7 +56,4 @@ Increase CACHE_TIMEOUT (e.g., to 7200 * 1000) if limits are hit.
 
 
 - Notes
-
-GTA Connected Version: Ensure ≥1.0.0 for httpGet. Update to ≥1.1.23 for optimal performance.
-Hosting: Tested on Linux (e.g., /home/container in Pterodactyl). Contact your hosting provider (e.g., LemeHost) if HTTP requests are restricted.
 Enhancements: For advanced VPN detection, consider a paid service like IPQualityScore (requires sign-up).
