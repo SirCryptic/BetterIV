@@ -24,7 +24,9 @@ This is useful for server owners who want to mirror in-game chat (e.g., `[WizzWo
    - In the Render dashboard, click "New" → "Web Service".
    - Connect to this repository: `https://github.com/SirCryptic/iv-proxy`.
    - Configure:
-     - **Runtime**: Python
+
+     <img width="1828" height="601" alt="image" src="https://github.com/user-attachments/assets/a9ef76d5-4795-4f8b-be5e-d2730c8f1261" />
+
    - Deploy the service.
 3. **Get the Proxy URL**:
    - After deployment, copy the public URL (e.g., `https://your-proxy.onrender.com`).
