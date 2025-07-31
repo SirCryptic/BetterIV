@@ -30,6 +30,7 @@ Threshold: Adjust the GetIPIntel.net threshold (default 0.3) for stricter/looser
 
 
 4. Test the VPN Blocking
+
 Test with a VPN:
 Connect to the server using a VPN.
 Expected result: Player is kicked with the message “You have been kicked for using a VPN. Please disable it and reconnect.”
