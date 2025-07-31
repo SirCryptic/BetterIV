@@ -2,8 +2,7 @@
 
 For GTA Connected server to block players using VPNs or proxies. The script uses multiple free, no-sign-up APIs to detect VPN and proxy connections, ensuring fair gameplay by preventing ban evasion. It is designed as a standalone resource (`vpnblock`) for GTA Connected servers, compatible with the libcurl update (post-16/08/2024).
 
-The script checks player IPs on connection, kicks detected VPN/proxy users with a message ("You have been kicked for using a VPN. Please disable it and reconnect."), and supports emoji processing for consistency with other server scripts.
-
+The script checks player IPs on connection, kicks detected VPN/proxy users with a message ("You have been kicked for using a VPN. Please disable it and reconnect.").
 ## Features
 - Blocks VPN and proxy connections using free APIs:
   - GetIPIntel.net
