@@ -48,6 +48,7 @@ Free APIs may miss advanced VPNs (e.g., residential IPs). Lower the GetIPIntel.n
 Check logs for API failures (e.g., HTTP 429 for rate limits).
 
 - Rate Limits:
+
 GetIPIntel.net: 100 checks/day.
 ip-api.com: 45 requests/minute.
 Others: No strict limits, but caching prevents abuse.
