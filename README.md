@@ -1,4 +1,4 @@
-<p align="center">Resources for enhancing GTA Connected Servers (These also serve as examples)</p>
+<p align="center">Resources for enhancing GTA Connected Servers [Specifically IV] (These also serve as examples)</p>
 
 <p align="center">
   <a href="https://github.com/sircryptic">
