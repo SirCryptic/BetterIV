@@ -1,0 +1,4 @@
+<meta>
+    <info title="b-blips" author="SirCryptic" version="1.0" description="Example Resource Of Blips On GTA Connected"/>
+    <script src="client.js" type="client" language="javascript" />
+</meta>
