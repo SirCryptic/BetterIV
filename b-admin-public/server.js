@@ -126,7 +126,6 @@ addEventHandler("OnPlayerChat", function(event, client, chatMessage) {
     return false;
 });
 
-
 addCommandHandler("emotes", function(command, params, client) {
     if (getPlayerAdminLevel(client) < getLevelForCommand(command)) {
         messageClient("You are not authorized to use this command!", client, errorMessageColour);
@@ -150,6 +149,16 @@ addCommandHandler("emotes", function(command, params, client) {
 
 addEventHandler("OnPlayerJoined", function(event, client) {
     console.log(`CONNECT: ${client.name} (${client.ip}) is attempting to connect`);
+
+    // Check if username is already taken by another connected client
+    const existingClient = getClients().find(c => c.index !== client.index && c.name.toLowerCase() === client.name.toLowerCase());
+    if (existingClient) {
+        messageClient(`Sorry, this username ${client.name} is already taken, please choose something else.`, client, errorMessageColour);
+        client.disconnect();
+        messageAdmins(`Player ${client.name} [IP: ${client.ip}] was disconnected: Username already taken by ID:${existingClient.index}.`);
+        logAdminAction(client, "join_attempt", "", `Disconnected due to duplicate username ${client.name}`);
+        return;
+    }
 
     // Rate limiting: Track join attempts per IP
     const ip = client.ip;
@@ -179,6 +188,7 @@ addEventHandler("OnPlayerJoined", function(event, client) {
     // Trigger token request from client
     triggerNetworkEvent("b.admin.token", client, scriptConfig.serverToken);
 });
+
 // ----------------------------------------------------------------------------
 
 addCommandHandler("adminhelp", (command, params, client) => {
@@ -255,7 +265,7 @@ addCommandHandler("consolehelp", (command, params, client) => {
         { usage: "makemod [ID:<number>]/name/ip/token", description: "Makes Player Moderator level 1" },
         { usage: "unban name/ip/token", description: "Removes a ban by player name, IP, or token" },
         { usage: "banlist", description: "Lists all active bans with details" },
-        { usage: "trainers [ID:<number>]/name/ip/token", description: "Toggles trainers for a player" },
+        { usage: "trainers name", description: "Toggles trainers for a player" },
         { usage: "disableweapons [ID:<number>]/name/ip/token", description: "Toggles weapons for a player" },
         { usage: "reloadplayers", description: "Reloads player data from players.json" }
     ].map(cmd => `${cmd.usage} - ${cmd.description}`).join("\n");
@@ -411,6 +421,7 @@ addCommandHandler("scripts", (command, params, client) => {
 });
 
 // ----------------------------------------------------------------------------
+
 addCommandHandler("ban", (command, params, client) => {
     if (!client.console && getPlayerAdminLevel(client) < getLevelForCommand(command)) {
         messageClient("You are not authorized to use this command!", client, errorMessageColour);
@@ -454,7 +465,8 @@ addCommandHandler("ban", (command, params, client) => {
             },
             trainers: null,
             weapons: null,
-            admin: null
+            admin: null,
+            lastKnownName: null
         });
         saveTextFile("players_backup.json", JSON.stringify(playersData, null, '\t'));
         savePlayers();
@@ -493,7 +505,8 @@ addCommandHandler("ban", (command, params, client) => {
             bans: null,
             trainers: { status: areTrainersEnabledForEverybody(), addedBy: "System" },
             weapons: { status: true, addedBy: "System" },
-            admin: null
+            admin: null,
+            lastKnownName: null
         });
         playerIndex = playersData.length - 1;
     }
@@ -517,7 +530,9 @@ addCommandHandler("ban", (command, params, client) => {
     targetClient.disconnect();
     return true;
 });
+
 // ----------------------------------------------------------------------------
+
 addCommandHandler("tempban", (command, params, client) => {
     if (!client.console && getPlayerAdminLevel(client) < getLevelForCommand(command)) {
         messageClient("You are not authorized to use this command!", client, errorMessageColour);
@@ -569,7 +584,8 @@ addCommandHandler("tempban", (command, params, client) => {
             },
             trainers: null,
             weapons: null,
-            admin: null
+            admin: null,
+            lastKnownName: null
         });
         saveTextFile("players_backup.json", JSON.stringify(playersData, null, '\t'));
         savePlayers();
@@ -608,7 +624,8 @@ addCommandHandler("tempban", (command, params, client) => {
             bans: null,
             trainers: { status: areTrainersEnabledForEverybody(), addedBy: "System" },
             weapons: { status: true, addedBy: "System" },
-            admin: null
+            admin: null,
+            lastKnownName: null
         });
         playerIndex = playersData.length - 1;
     }
@@ -632,6 +649,7 @@ addCommandHandler("tempban", (command, params, client) => {
     targetClient.disconnect();
     return true;
 });
+
 // ----------------------------------------------------------------------------
 
 addCommandHandler("unban", (command, params, client) => {
@@ -700,7 +718,11 @@ addCommandHandler("listplayers", (command, params, client) => {
         return false;
     }
 
-    let playerList = players.map(p => `${p.name} [ID:${p.index}, IP: ${p.ip}]`).join("\n");
+    let playerList = players.map(p => {
+        const playerData = playersData.find(pd => pd.token === p.getData("b.token"));
+        const lastKnownName = playerData && playerData.lastKnownName ? ` - Last known as: (${playerData.lastKnownName})` : "";
+        return `${p.name} [ID:${p.index}, IP: ${p.ip}]${lastKnownName}`;
+    }).join("\n");
     if (client.console) {
         console.log(`Connected Players (${players.length}):\n${playerList}`);
     }
@@ -795,7 +817,8 @@ addCommandHandler("makeadmin", (command, params, client) => {
             bans: null,
             trainers: { status: areTrainersEnabledForEverybody(), addedBy: "System" },
             weapons: { status: true, addedBy: "System" },
-            admin: { role: "admin", level: 2, addedBy: escapeJSONString(client.name) }
+            admin: { role: "admin", level: 2, addedBy: escapeJSONString(client.name) },
+            lastKnownName: null
         });
     } else {
         playersData[playerIndex].admin = {
@@ -845,7 +868,8 @@ addCommandHandler("makemod", (command, params, client) => {
             bans: null,
             trainers: { status: areTrainersEnabledForEverybody(), addedBy: "System" },
             weapons: { status: true, addedBy: "System" },
-            admin: { role: "mod", level: 1, addedBy: escapeJSONString(client.name) }
+            admin: { role: "mod", level: 1, addedBy: escapeJSONString(client.name) },
+            lastKnownName: null
         });
     } else {
         playersData[playerIndex].admin = {
@@ -912,8 +936,8 @@ addCommandHandler("demote", (command, params, client) => {
 
     // Prevent self-demote
     if (!client.console && targetClient && targetClient.index === client.index) {
-    messageClient("You cannot demote yourself!", client, errorMessageColour);
-    return false;
+        messageClient("You cannot demote yourself!", client, errorMessageColour);
+        return false;
     }
 
     playersData[playerIndex].admin = null;
@@ -967,7 +991,8 @@ addCommandHandler("trainers", (command, params, client) => {
                 bans: null,
                 trainers: { status: areTrainersEnabledForEverybody(), addedBy: "System" },
                 weapons: { status: true, addedBy: "System" },
-                admin: null
+                admin: null,
+                lastKnownName: null
             });
         }
         let currentStatus = targetClient.trainers;
@@ -991,7 +1016,8 @@ addCommandHandler("trainers", (command, params, client) => {
                 bans: null,
                 trainers: { status: true, addedBy: "System" },
                 weapons: { status: true, addedBy: "System" },
-                admin: null
+                admin: null,
+                lastKnownName: null
             });
         }
     }
@@ -1050,7 +1076,8 @@ addCommandHandler("disableweapons", (command, params, client) => {
                 bans: null,
                 trainers: { status: areTrainersEnabledForEverybody(), addedBy: "System" },
                 weapons: { status: true, addedBy: "System" },
-                admin: null
+                admin: null,
+                lastKnownName: null
             });
         }
         let currentStatus = targetClient.getData("b.weapons");
@@ -1076,7 +1103,8 @@ addCommandHandler("disableweapons", (command, params, client) => {
                 bans: null,
                 trainers: { status: areTrainersEnabledForEverybody(), addedBy: "System" },
                 weapons: { status: true, addedBy: "System" },
-                admin: null
+                admin: null,
+                lastKnownName: null
             });
         }
         console.log(`Toggling weapon status for offline player ${targetParams}: -> ${newStatus} by ${client.name}`);
@@ -1099,6 +1127,7 @@ addCommandHandler("disableweapons", (command, params, client) => {
     }
     return true;
 });
+
 
 // ----------------------------------------------------------------------------
 
@@ -1214,6 +1243,7 @@ addCommandHandler("reloadplayers", (command, params, client) => {
     messageAdmins(`${client.name} reloaded player data from ${playersFile}.`);
     return true;
 });
+
 
 // ----------------------------------------------------------------------------
 
@@ -1434,10 +1464,13 @@ function loadPlayers() {
             messageAdmins(`Could not parse ${playersFile}. Initialized empty players data.`);
             return false;
         }
-        // Ensure all entries have an admin field
+        // Ensure all entries have required fields
         playersData.forEach(player => {
             if (!player.hasOwnProperty('admin')) {
                 player.admin = null;
+            }
+            if (!player.hasOwnProperty('lastKnownName')) {
+                player.lastKnownName = null;
             }
         });
     } catch (e) {
@@ -1639,7 +1672,7 @@ function generateRandomString(length, characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZab
 
 // ----------------------------------------------------------------------------
 
-// Updated b.admin.token handler (check sent token first, assign new if not present, detect evasion, set permissions)
+// Updated b.admin.token handler to allow name changes, track last known name, and display in format: playername - Last known as: (oldname1)
 addNetworkHandler("b.admin.token", function (fromClient, token) {
     let tokenValid = false;
     let playerIndex = -1;
@@ -1660,17 +1693,17 @@ addNetworkHandler("b.admin.token", function (fromClient, token) {
         // Token matches existing entry
         const existingPlayer = playersData[playerIndex];
         if (existingPlayer.name.toLowerCase() !== fromClient.name.toLowerCase()) {
-            // Evasion: same token, different name (offline name change)
-            messageClient("Ban evasion detected: Name change with same token!", fromClient, errorMessageColour);
-            fromClient.disconnect();
-            messageAdmins(`Ban evasion: ${fromClient.name} [IP: ${fromClient.ip}] used token from ${existingPlayer.name}, disconnected.`);
-            logAdminAction(fromClient, "evasion", "", `Name change with same token (old name: ${existingPlayer.name})`);
-            return false;
+            // Name change detected, update lastKnownName and current name
+            playersData[playerIndex].lastKnownName = escapeJSONString(existingPlayer.name);
+            playersData[playerIndex].name = escapeJSONString(fromClient.name);
+            savePlayers();
+            messageAdmins(`${fromClient.name} [IP: ${fromClient.ip}] changed name - Last known as: (${existingPlayer.name})`);
+            logAdminAction(fromClient, "name_change", "", `Changed name from ${existingPlayer.name} to ${fromClient.name}`);
         }
 
         // Update IP if changed
         if (existingPlayer.ip !== fromClient.ip) {
-            existingPlayer.ip = fromClient.ip;
+            playersData[playerIndex].ip = fromClient.ip;
             savePlayers();
         }
 
@@ -1683,19 +1716,17 @@ addNetworkHandler("b.admin.token", function (fromClient, token) {
             return false;
         }
     } else {
-        // New token, check for name impersonation or IP match
+        // New token, check for name or IP match (optional for monitoring, but no disconnect)
         const existingByName = playersData.find(p => p.name.toLowerCase() === fromClient.name.toLowerCase());
         if (existingByName) {
             messageAdmins(`Possible impersonation: ${fromClient.name} [IP: ${fromClient.ip}] matches existing name but new token. Expected token: ${existingByName.token}`);
             logAdminAction(fromClient, "join_attempt", "", `Possible impersonation (matched name, new token)`);
-            // Optionally disconnect or flag
         }
 
         const existingByIP = playersData.find(p => p.ip === fromClient.ip);
         if (existingByIP) {
-            messageAdmins(`Possible evasion: ${fromClient.name} [IP: ${fromClient.ip}] matches existing IP but new token/name. Old name: ${existingByIP.name}`);
+            messageAdmins(`Possible evasion: ${fromClient.name} [IP: ${fromClient.ip}] matches existing IP but new token/name. Last known as: (${existingByIP.name})`);
             logAdminAction(fromClient, "join_attempt", "", `Possible evasion (matched IP, new token/name)`);
-            // Optionally disconnect or flag
         }
 
         // Create new entry
@@ -1706,7 +1737,8 @@ addNetworkHandler("b.admin.token", function (fromClient, token) {
             bans: null,
             trainers: { status: areTrainersEnabledForEverybody(), addedBy: "System" },
             weapons: { status: true, addedBy: "System" },
-            admin: null
+            admin: null,
+            lastKnownName: null
         });
         savePlayers();
         playerIndex = playersData.length - 1;
@@ -1723,15 +1755,16 @@ addNetworkHandler("b.admin.token", function (fromClient, token) {
 
     if (playerData.admin) {
         fromClient.setData("b.admin", playerData.admin.level || 1, true);
-        messageAdmins(`${fromClient.name} authenticated as admin (Level ${playerData.admin.level}).`);
+        messageAdmins(`${fromClient.name} authenticated as admin (Level ${playerData.admin.level})${playerData.lastKnownName ? ` - Last known as: (${playerData.lastKnownName})` : ""}`);
         logAdminAction(fromClient, "login", "", `Authenticated as admin (Level ${playerData.admin.level})`);
     } else {
         fromClient.setData("b.admin", 0, true);
     }
 
-    messageAdmins(`[JOIN] Player ${fromClient.name} connected (IP: ${fromClient.ip})`);
+    messageAdmins(`[JOIN] Player ${fromClient.name} connected (IP: ${fromClient.ip})${playerData.lastKnownName ? ` - Last known as: (${playerData.lastKnownName})` : ""}`);
     return true;
 });
+
 // ----------------------------------------------------------------------------
 
 function areTrainersEnabledForEverybody() {
@@ -1774,6 +1807,7 @@ function isPlayerAdmin(client) {
 }
 
 // ----------------------------------------------------------------------------
+
 function isIPInRange(ip, range) {
     if (range.includes('*')) { // Wildcard e.g., 192.168.*.*
         const regex = new RegExp('^' + range.replace(/\./g, '\\.').replace(/\*/g, '\\d+') + '$');
@@ -1791,6 +1825,7 @@ function isIPInRange(ip, range) {
 function ipToInt(ip) {
     return ip.split('.').reduce((acc, octet) => (acc << 8) | parseInt(octet), 0) >>> 0;
 }
+
 function isValidCIDR(range) {
     if (!range.includes('/')) return true;
     const [ip, bits] = range.split('/');
@@ -1799,7 +1834,9 @@ function isValidCIDR(range) {
     const ipParts = ip.split('.').map(Number);
     return ipParts.length === 4 && ipParts.every(part => !isNaN(part) && part >= 0 && part <= 255);
 }
+
 // ----------------------------------------------------------------------------
+
 function logAdminAction(client, command, params, details = "") {
     let logFileContent = loadTextFile(adminLogFile);
     let logArray = [];
