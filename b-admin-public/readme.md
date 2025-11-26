@@ -1,56 +1,74 @@
 # GTA Connected Admin Script
 
-This is a complete rewrite of the [Vortex v-admin script](https://github.com/VortrexFTW/v-essentials/tree/master/v-admin) for GTA Connected (GTA IV), designed for public use with enhanced features and a streamlined codebase. Certain features from my private version, such as making other players dance or killing them, have been stripped to focus on core administrative functionality. This script provides robust server management tools for administrators and moderators, including player management, bans, and chat enhancements.
+Public admin/moderation script for GTA Connected ( specifically GTA IV). Focused on clear permissions, auditable actions, and simple storage with optional encryption-at-rest.
 
-## Features
+## Highlights
 
-- **Player Management**: Manage players with commands to kick, ban, tempban, unban, and toggle trainers or weapons.
-- **Admin Roles**: Supports admin and moderator roles with configurable permission levels.
-- **Ban System**: Permanent and temporary bans with reasons and expiration times, stored in `players.json`.
-- **Chat Enhancements**: Emote support in chat messages (e.g., `:)` becomes 😊) for both client and server.
-- **Script Blocking**: Block specific game scripts on GTA Connected to prevent unwanted behavior.
-- **Admin Logging**: Logs all admin actions to `log.json` for accountability.
-- **Configuration**: Customizable settings via `config.json`, including command levels and blocked scripts.
+- Player management: kick, ban, tempban, unban, toggle trainers/weapons.
+- Roles & levels: 2 = admin, 1 = moderator, 0 = player (configurable in `config.json`).
+- Bans: permanent/temporary with required reasons, auto-expiry handling.
+- IP bans: `banip`/`unbanip` plus `lastbanip` to review recent IP actions from `log.json`.
+- List privacy: moderators see Name + ID, admins/console can also see IPs.
+- Logging: only key admin/mod commands are logged to `log.json` with timestamp, actor, target, and reason.
+- Optional encryption-at-rest for `players.json` via `config.json` - `encryption` (please use this, i can not stress enough about it!).
+
+## Authentication
+
+- Token-based admin/mod:On join, the token is checked to grant level/role.
 
 ## Commands
 
-### General Commands
-- `/emotes`: Displays a list of available emoticons for use in chat messages (e.g., `:)` for 😊, `:D` for 😃).
-- `/listplayers`: Lists all connected players with their IDs, names, and IP addresses (Admin Level 1).
+### Everyone
+- `/emotes` - Show available chat emoticons.
 
-### Admin/Mod Commands (In-Game)
-- `/adminhelp`: Lists all available admin commands with their required permission levels (Admin Level 1).
-- `/adminstatus`: Displays the admin's name, role, and permission level (Admin Level 1).
-- `/kick [ID:<number>]/name/ip/token`: Kicks a player from the server (Admin Level 1).
-- `/ban [ID:<number>]/name/ip/token [reason]`: Permanently bans a player (Admin Level 1).
-- `/tempban [ID:<number>]/name/ip/token <minutes> [reason]`: Temporarily bans a player for a specified duration (Admin Level 1).
-- `/unban name/ip/token`: Removes a ban by name, IP, or token (Admin Level 1).
-- `/banlist`: Lists all active bans with details (Admin Level 1).
-- `/msay <message>`, `/modsay <message>`, `/m <message>`: Broadcasts a message as a moderator (Admin Level 1, Moderator role).
-- `/wsay <message>`, `/ownersay <message>`, `/w <message>`: Broadcasts a message as an owner (Admin Level 2).
-- `/a <message>`: Sends a message to all admins (Admin Level 1).
-- `/announce <message>`: Broadcasts a message to all players (Admin Level 1).
-- `/makeadmin <username>`: Grants admin status to a player (Admin Level 2).
-- `/makemod <username>`: Grants moderator status to a player (Admin Level 2).
-- `/demote  [ID:<number>]/name/ip`: removes admin/mod status of a player.
-- `/trainers name`: Toggles trainers for a player (GTA IV only, Admin Level 1).
-- `/disableweapons [ID:<number>]/name/ip/token`: Toggles weapons for a player (GTA Connected only, Admin Level 1).
-- `/ip [ID:<number>]/name/ip/token`: Retrieves a player's IP address (Admin Level 1).
-- `/scripts [ID:<number>]/name/ip/token`: Requests active game scripts for a player (GTA Connected only, Admin Level 1).
-- `/blockscript <script>`: Blocks a specific game script (GTA Connected only, Admin Level 1).
-- `/reloadadmins`: Reloads admin permissions from `players.json` (Admin Level 1).
-- `/reloadbans`: Reloads bans from `players.json` (Admin Level 1).
-- `/reloadplayers`: Reloads all player data from `players.json` (Admin Level 1).
+### Moderators (Level 1)
+- `/adminhelp` - List available commands and required levels.
+- `/adminstatus` - Show your role/level.
+- `/listplayers` - See connected players. Level 1 shows `Name [ID]`; Level 2/console also shows IP.
+- `/kick [ID:<n>]/name/ip/token` - Kick a player.
+- `/tempban [ID:<n>]/name/ip/token <minutes> <reason>` - Temporary ban.
+- `/unban name/ip/token <reason>` - Remove a ban (reason required).
+- Chat: `/msay`, `/modsay`, `/m` - Moderator broadcast.
+- Utilities: `/a <message>`, `/announce <message>`, `/scripts`, `/blockscript <script>`, `/disableweapons`, `/trainers` (GTA IV), `/ip`, `/banlist`, `/reloadplayers`, `/reloadbans`.
 
-### Console-Only Commands
-- `consolehelp`: Displays available console commands (Console only).
+### Admins (Level 2) and Console
+- `/ban [ID:<n>]/name/ip/token <reason>` - Permanent ban (reason required).
+- `/banip <ip> <reason>` - Ban an IP (reason required).
+- `/unbanip <ip> <reason>` - Unban an IP (reason required).
+- `/lastbanip [ip|count]` - Show recent IP ban/unban entries from `log.json`.
+- `/makeadmin <username>` - Grant admin.
+- `/makemod <username>` - Grant moderator.
+- `/demote <username> [reason]` - Remove admin/mod. Only console can demote an admin; in-game admins can demote moderators.
+- Owner chat: `/wsay`, `/ownersay`, `/w`.
 
-## Notes
+## Logging (log.json)
 
-- This script is tailored for GTA Connected (GTA IV) and may not work on other platforms without modification.
-- Some features, like `/trainers` and `/disableweapons`, are specific to GTA Connected.
-- Emote support enhances chat interaction
+- Audited commands: `kick`, `scripts`, `ban`, `unban`, `blockscript`, `makeadmin`, `makemod`, `trainers`, `ip`, `geoip`, `reloadbans`, `reloadplayers`, `tempban`, `listplayers`, `disableweapons`, `wsay`, `banlist`, `banip`, `unbanip`, `demote`.
+- Each entry includes: `timestamp`, `actor`, `action`, `target`, `reason`, `context`, `details`.
+- IPs are masked in logs except for `banip`/`unbanip` where they are kept to aid unbanning.
 
-- ⭐ Developed By SirCryptic
+## Storage & Encryption
 
-- Credits: [VortrexFTW](https://github.com/VortrexFTW) for the original v-admin script.
+- Player data is stored in `players.json`.
+- Optional encryption-at-rest can obfuscate `players.json` contents (please use a random 32 char secret you can get one from [here](https://www.random.org/strings/?num=32&len=32&digits=on&upperalpha=on&loweralpha=on&unique=on&format=html&rnd=new)).
+	- place it In `config.json`:
+		- `"encryption": { "enabled": true, "secret": "<your-long-random-secret>", "version": 1 }`
+		- Use a 32+ char secret if too short, data saves as plaintext (this is bad but some server owners neglect to even change config options 🫠).
+	- The built-in adapter uses a lightweight keystream/XOR with Base64 to deter casual inspection. For strong cryptography, use an external tool/service.
+
+## Configuration
+
+- `config.json` contains:
+	- `commandLevels` - map commands to required levels (2 admin, 1 moderator, 0 player).
+	- `blockedScripts` - per-game blocked client scripts list.
+	- `geoip` - GeoIP database paths (if used in your environment).
+	- `encryption` - optional encrypted-at-rest settings for `players.json`.
+
+## Console Help
+
+- Run `consolehelp` in server console to see command summaries and usage.
+
+## Credits
+
+- Based on concepts from the original v-admin script by [VortrexFTW](https://github.com/VortrexFTW).
+- Enhancements by [SirCryptic](https://github.com/SirCryptic) (missing features from my private version with good reason).
