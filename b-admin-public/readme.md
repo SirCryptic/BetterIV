@@ -51,7 +51,7 @@ Public admin/moderation script for GTA Connected ( specifically GTA IV). Focused
 
 - Player data is stored in `players.json`.
 - Optional encryption-at-rest can fully protect the file using **AES-256-GCM**.
-    - Add this in `config.json`:
+    - change this in `config.json`:
         ```json
         "encryption": { "enabled": true, "secret": "<your-random-32-char-secret>", "version": 2 }
         ```
