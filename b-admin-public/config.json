@@ -46,6 +46,8 @@
 	"encryption": {
 		"enabled": false,
 		"secret": "CHANGE_ME_TO_RANDOM_32+_CHARS",
-		"version": 1
+		"version": 2,
+		"algorithm": "AES-256-GCM",
+		"prf": "HMAC-SHA512"
 	}
 }
