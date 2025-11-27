@@ -50,11 +50,15 @@ Public admin/moderation script for GTA Connected ( specifically GTA IV). Focused
 ## Storage & Encryption
 
 - Player data is stored in `players.json`.
-- Optional encryption-at-rest can obfuscate `players.json` contents (please use a random 32 char secret you can get one from [here](https://www.random.org/strings/?num=32&len=32&digits=on&upperalpha=on&loweralpha=on&unique=on&format=html&rnd=new)).
-	- place it In `config.json`:
-		- `"encryption": { "enabled": true, "secret": "<your-long-random-secret>", "version": 1 }`
-		- Use a 32+ char secret if too short, data saves as plaintext (this is bad but some server owners neglect to even change config options 🫠).
-	- The built-in adapter uses a lightweight keystream/XOR with Base64 to deter casual inspection. For strong cryptography, use an external tool/service.
+- Optional encryption-at-rest can fully protect the file using **AES-256-GCM**.
+    - Add this in `config.json`:
+        ```json
+        "encryption": { "enabled": true, "secret": "<your-random-32-char-secret>", "version": 2 }
+        ```
+    - Use a proper **32+ char random secret** (grab one here: https://www.random.org/strings/?num=1&len=32&digits=on&upperalpha=on&loweralpha=on&unique=on&format=html&rnd=new).
+    - If the secret is missing/too short, the file saves as plaintext.
+- The system uses **AES-256-GCM + HMAC-SHA512 key/IV derivation** to keep `players.json` private.
+
 
 ## Configuration
 
