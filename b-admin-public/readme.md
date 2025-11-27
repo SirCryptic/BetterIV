@@ -55,7 +55,7 @@ Public admin/moderation script for GTA Connected ( specifically GTA IV). Focused
         ```json
         "encryption": { "enabled": true, "secret": "<your-random-32-char-secret>", "version": 2 }
         ```
-    - Use a proper **32+ char random secret** (grab one here: https://www.random.org/strings/?num=1&len=32&digits=on&upperalpha=on&loweralpha=on&unique=on&format=html&rnd=new).
+    - Use a proper **32+ char random secret** grab one [here](https://www.random.org/strings/?num=1&len=32&digits=on&upperalpha=on&loweralpha=on&unique=on&format=html&rnd=new).
     - If the secret is missing/too short, the file saves as plaintext.
 - The system uses **AES-256-GCM + HMAC-SHA512 key/IV derivation** to keep `players.json` private.
 
