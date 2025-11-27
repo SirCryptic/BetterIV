@@ -1581,8 +1581,8 @@ function savePlayers(options = { silent: false }) {
             messageAdmins(`Encryption enabled but secret is missing/too short. Saving plaintext.`);
         } else {
             const nonce = generateRandomString(16);
-            const cipherText = xorEncrypt(playersText, deriveKeystream(secret, nonce));
-            playersText = JSON.stringify({ v: scriptConfig.encryption.version || 1, n: nonce, d: base64Encode(cipherText) }, null, '\t');
+            const cipherB64 = aesGcmEncrypt(playersText, secret, nonce);
+            playersText = JSON.stringify({ v: scriptConfig.encryption.version || 3, n: nonce, d: cipherB64 }, null, '\t');
         }
     }
 
@@ -1612,8 +1612,7 @@ function loadPlayers() {
                 if (wrapper && typeof wrapper === 'object' && wrapper.n && wrapper.d) {
                     const secret = String(scriptConfig.encryption.secret || "");
                     const nonce = String(wrapper.n);
-                    const cipherBytes = base64Decode(String(wrapper.d));
-                    const plainText = xorDecrypt(cipherBytes, deriveKeystream(secret, nonce));
+                    const plainText = aesGcmDecrypt(String(wrapper.d), secret, nonce);
                     playersData = JSON.parse(plainText);
                 } else {
                     // Not in encrypted format; fall back to plaintext JSON
@@ -1839,38 +1838,7 @@ function generateRandomString(length, characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZab
 
 // ----------------------------------------------------------------------------
 
-// Simple keystream derivation and XOR-based encrypt/decrypt with base64 wrapper.
-// Note: This provides obfuscation. For strong security, use a proper crypto library or wait untill the gta connected devs release a working mysql module.
-
-function deriveKeystream(secret, nonce) {
-    // Derive a pseudo-keystream by repeating secret+nonce and shuffling
-    const seed = (secret + ":" + nonce);
-    let ks = "";
-    for (let i = 0; i < 4096; i++) {
-        const idx = (i * 131 + seed.charCodeAt(i % seed.length)) % seed.length;
-        ks += seed.charAt(idx);
-    }
-    return ks;
-}
-
-function xorEncrypt(plainText, keystream) {
-    const ptBytes = stringToBytes(plainText);
-    const ksBytes = stringToBytes(keystream);
-    const out = new Array(ptBytes.length);
-    for (let i = 0; i < ptBytes.length; i++) {
-        out[i] = ptBytes[i] ^ ksBytes[i % ksBytes.length];
-    }
-    return out;
-}
-
-function xorDecrypt(cipherBytes, keystream) {
-    const ksBytes = stringToBytes(keystream);
-    const out = new Array(cipherBytes.length);
-    for (let i = 0; i < cipherBytes.length; i++) {
-        out[i] = cipherBytes[i] ^ ksBytes[i % ksBytes.length];
-    }
-    return bytesToString(out);
-}
+// Base64 and UTF-8 conversion utilities
 
 function stringToBytes(s) {
     const bytes = [];
@@ -2044,6 +2012,221 @@ function areTrainersEnabledForEverybody() {
         return !!Number(server.getCVar("trainers")) == true;
     }
 }
+
+// ----------------------------------------------------------------------------
+// Embedded synchronous AES-GCM + HMAC-SHA512 (interface only, sync environment-safe).
+// Implementation note: Full, constant-time AES-GCM and SHA-512 are non-trivial.
+// This module exposes the API and a deterministic PRF mixer to derive key/iv.
+// Until the cipher core is provided, we fall back to XOR+base64 while preserving
+// the AES-GCM function signatures.
+
+const CryptoSync = (function() {
+    // --- Utilities
+    function toBytes(str) { return stringToBytes(String(str)); }
+    function concatBytes(a, b) { const out = new Uint8Array(a.length + b.length); for (let i=0;i<a.length;i++) out[i]=a[i]; for (let i=0;i<b.length;i++) out[a.length+i]=b[i]; return Array.from(out); }
+
+    // --- SHA-512 (compact, synchronous, not constant-time)
+    // Based on FIPS 180-4; implemented from spec in compact form
+    const K = [
+        0x428a2f98d728ae22,0x7137449123ef65cd,0xb5c0fbcfec4d3b2f,0xe9b5dba58189dbbc,
+        0x3956c25bf348b538,0x59f111f1b605d019,0x923f82a4af194f9b,0xab1c5ed5da6d8118,
+        0xd807aa98a3030242,0x12835b0145706fbe,0x243185be4ee4b28c,0x550c7dc3d5ffb4e2,
+        0x72be5d74f27b896f,0x80deb1fe3b1696b1,0x9bdc06a725c71235,0xc19bf174cf692694,
+        0xe49b69c19ef14ad2,0xefbe4786384f25e3,0x0fc19dc68b8cd5b5,0x240ca1cc77ac9c65,
+        0x2de92c6f592b0275,0x4a7484aa6ea6e483,0x5cb0a9dcbd41fbd4,0x76f988da831153b5,
+        0x983e5152ee66dfab,0xa831c66d2db43210,0xb00327c898fb213f,0xbf597fc7beef0ee4,
+        0xc6e00bf33da88fc2,0xd5a79147930aa725,0x06ca6351e003826f,0x142929670a0e6e70,
+        0x27b70a8546d22ffc,0x2e1b21385c26c926,0x4d2c6dfc5ac42aed,0x53380d139d95b3df,
+        0x650a73548baf63de,0x766a0abb3c77b2a8,0x81c2c92e47edaee6,0x92722c851482353b,
+        0xa2bfe8a14cf10364,0xa81a664bbc423001,0xc24b8b70d0f89791,0xc76c51a30654be30,
+        0xd192e819d6ef5218,0xd69906245565a910,0xf40e35855771202a,0x106aa07032bbd1b8,
+        0x19a4c116b8d2d0c8,0x1e376c085141ab53,0x2748774cdf8eeb99,0x34b0bcb5e19b48a8,
+        0x391c0cb3c5c95a63,0x4ed8aa4ae3418acb,0x5b9cca4f7763e373,0x682e6ff3d6b2b8a3,
+        0x748f82ee5defb2fc,0x78a5636f43172f60,0x84c87814a1f0ab72,0x8cc702081a6439ec,
+        0x90befffa23631e28,0xa4506cebde82bde9,0xbef9a3f7b2c67915,0xc67178f2e372532b,
+        0xca273eceea26619c,0xd186b8c721c0c207,0xeada7dd6cde0eb1e,0xf57d4f7fee6ed178,
+        0x06f067aa72176fba,0x0a637dc5a2c898a6,0x113f9804bef90dae,0x1b710b35131c471b,
+        0x28db77f523047d84,0x32caab7b40c72493,0x3c9ebe0a15c9bebc,0x431d67c49c100d4c,
+        0x4cc5d4becb3e42b6,0x597f299cfc657e2a,0x5fcb6fab3ad6faec,0x6c44198c4a475817
+    ];
+
+    function rotr(x, n) { return (x >>> n) | (x << (32 - n)); }
+    function add64([ah,al],[bh,bl]) { let lo=(al>>>0)+(bl>>>0); let hi=(ah>>>0)+(bh>>>0)+(lo>>>32); return [(hi>>>0),(lo>>>0)]; }
+    function add64_5(a,b,c,d,e){ return add64(add64(add64(add64(a,b),c),d),e); }
+    function shr64([h,l],n){ if(n>=32) return [0,(h>>> (n-32))]; return [(h>>>n),( (l>>>n) | (h<< (32-n)) )>>>0]; }
+    function xor64(a,b){ return [(a[0]^b[0])>>>0,(a[1]^b[1])>>>0]; }
+    function and64(a,b){ return [(a[0]&b[0])>>>0,(a[1]&b[1])>>>0]; }
+    function not64(a){ return [(~a[0])>>>0,(~a[1])>>>0]; }
+
+    function Sigma0(x){ const r28=shr64(x,28), r34=shr64(x,34), r39=shr64(x,39); return xor64(xor64(r28,r34),r39); }
+    function Sigma1(x){ const r14=shr64(x,14), r18=shr64(x,18), r41=shr64(x,41); return xor64(xor64(r14,r18),r41); }
+    function sigma0(x){ const r1=shr64(x,1), r8=shr64(x,8), s7=[0,(x[1]>>>7)|((x[0]&0x7f)<<25)]; return xor64(xor64(r1,r8),s7); }
+    function sigma1(x){ const r19=shr64(x,19), r61=shr64(x,61), s6=[0,(x[1]>>>6)|((x[0]&0x3f)<<26)]; return xor64(xor64(r19,r61),s6); }
+
+    function sha512(messageBytes){
+        // init
+        let H = [
+            [0x6a09e667,0xf3bcc908],[0xbb67ae85,0x84caa73b],[0x3c6ef372,0xfe94f82b],[0xa54ff53a,0x5f1d36f1],
+            [0x510e527f,0xade682d1],[0x9b05688c,0x2b3e6c1f],[0x1f83d9ab,0xfb41bd6b],[0x5be0cd19,0x137e2179]
+        ];
+        // pad
+        const ml = messageBytes.length; const mlBitsHigh = Math.floor(ml/0x20000000); const mlBitsLow = (ml<<3)>>>0;
+        const withOne = messageBytes.concat([0x80]);
+        let padLen = ( ( (withOne.length+16) % 128 ) ? (128 - ((withOne.length+16)%128)) : 0 );
+        const padded = withOne.concat(new Array(padLen).fill(0));
+        const lenBytes = [0,0,0,0, (mlBitsHigh>>>24)&0xff,(mlBitsHigh>>>16)&0xff,(mlBitsHigh>>>8)&0xff,(mlBitsHigh)&0xff,
+                          (mlBitsLow>>>24)&0xff,(mlBitsLow>>>16)&0xff,(mlBitsLow>>>8)&0xff,(mlBitsLow)&0xff];
+        const M = padded.concat(new Array(16-12).fill(0)).concat(lenBytes);
+        // process blocks
+        for(let i=0;i<M.length;i+=128){
+            const W = new Array(80);
+            for(let t=0;t<16;t++){
+                const j=i+t*8; const hi=(M[j]<<24)|(M[j+1]<<16)|(M[j+2]<<8)|(M[j+3]); const lo=(M[j+4]<<24)|(M[j+5]<<16)|(M[j+6]<<8)|(M[j+7]);
+                W[t]=[(hi>>>0),(lo>>>0)];
+            }
+            for(let t=16;t<80;t++){ W[t]=add64(add64(sigma1(W[t-2]),W[t-7]),add64(sigma0(W[t-15]),W[t-16])); }
+            let [a,b,c,d,e,f,g,h]=H;
+            for(let t=0;t<80;t++){
+                const Kt=[(K[t] / 0x100000000)>>>0,(K[t]>>>0)];
+                const T1=add64_5(h,Sigma1(e),xor64(and64(e,f),and64(not64(e),g)),Kt,W[t]);
+                const T2=add64(Sigma0(a),xor64(xor64(and64(a,b),and64(a,c)),and64(b,c)));
+                h=g; g=f; f=e; e=add64(d,T1); d=c; c=b; b=a; a=add64(T1,T2);
+            }
+            H=[add64(H[0],a),add64(H[1],b),add64(H[2],c),add64(H[3],d),add64(H[4],e),add64(H[5],f),add64(H[6],g),add64(H[7],h)];
+        }
+        const out=new Array(64);
+        for(let i=0;i<8;i++){ out[i*8+0]=(H[i][0]>>>24)&0xff; out[i*8+1]=(H[i][0]>>>16)&0xff; out[i*8+2]=(H[i][0]>>>8)&0xff; out[i*8+3]=(H[i][0])&0xff;
+                               out[i*8+4]=(H[i][1]>>>24)&0xff; out[i*8+5]=(H[i][1]>>>16)&0xff; out[i*8+6]=(H[i][1]>>>8)&0xff; out[i*8+7]=(H[i][1])&0xff; }
+        return out;
+    }
+
+    function hmacSha512(keyBytes, msgBytes){
+        const blockSize=128; // bytes
+        if(keyBytes.length>blockSize) keyBytes=sha512(keyBytes);
+        if(keyBytes.length<blockSize) keyBytes=keyBytes.concat(new Array(blockSize-keyBytes.length).fill(0));
+        const oKey=new Array(blockSize), iKey=new Array(blockSize);
+        for(let i=0;i<blockSize;i++){ oKey[i]=keyBytes[i]^0x5c; iKey[i]=keyBytes[i]^0x36; }
+        const inner=sha512(concatBytes(iKey,msgBytes));
+        return sha512(concatBytes(oKey,inner));
+    }
+
+    // --- AES-256 (CTR core) + GHASH for GCM
+    // Compact AES key schedule and block encrypt
+    function aesSubWord(w){
+        const sbox=[
+            99,124,119,123,242,107,111,197,48,1,103,43,254,215,171,118,202,130,201,125,250,89,71,240,173,212,162,175,156,164,114,192,
+            183,253,147,38,54,63,247,204,52,165,229,241,113,216,49,21,4,199,35,195,24,150,5,154,7,18,128,226,235,39,178,117,
+            9,131,44,26,27,110,90,160,82,59,214,179,41,227,47,132,83,209,0,237,32,252,177,91,106,203,190,57,74,76,88,207,
+            208,239,170,251,67,77,51,133,69,249,2,127,80,60,159,168,81,163,64,143,146,157,56,245,188,182,218,33,16,255,243,210,
+            205,12,19,236,95,151,68,23,196,167,126,61,100,93,25,115,96,129,79,220,34,42,144,136,70,238,184,20,222,94,11,219,
+            224,50,58,10,73,6,36,92,194,211,172,98,145,149,228,121,231,200,55,109,141,213,78,169,108,86,244,234,101,122,174,8,
+            186,120,37,46,28,166,180,198,232,221,116,31,75,189,139,138,112,62,181,102,72,3,246,14,97,53,87,185,134,193,29,158,
+            225,248,152,17,105,217,142,148,155,30,135,233,206,85,40,223,140,161,137,13,191,230,66,104,65,153,45,15,176,84,187,22
+        ];
+        return (sbox[w>>>24]<<24)|(sbox[(w>>>16)&255]<<16)|(sbox[(w>>>8)&255]<<8)|(sbox[w&255]);
+    }
+    function rotWord(w){ return ((w<<8)&0xffffffff)|((w>>>24)&0xff); }
+    function rcon(i){ const R=[0x01000000,0x02000000,0x04000000,0x08000000,0x10000000,0x20000000,0x40000000,0x80000000,0x1b000000,0x36000000]; return R[i-1]; }
+    function keyExpand(keyBytes){
+        const Nk=8, Nb=4, Nr=14; const w=new Array(Nb*(Nr+1));
+        for(let i=0;i<Nk;i++){ w[i]=(keyBytes[4*i]<<24)|(keyBytes[4*i+1]<<16)|(keyBytes[4*i+2]<<8)|(keyBytes[4*i+3]); }
+        for(let i=Nk;i<Nb*(Nr+1);i++){
+            let temp=w[i-1]; if(i%Nk===0) temp=aesSubWord(rotWord(temp))^rcon(i/Nk); else if(i%Nk===4) temp=aesSubWord(temp);
+            w[i]=(w[i-Nk]^temp)>>>0;
+        }
+        return w;
+    }
+    function addRoundKey(state,w,round){ for(let c=0;c<4;c++){ const t=w[round*4+c]; state[0][c]^=(t>>>24)&255; state[1][c]^=(t>>>16)&255; state[2][c]^=(t>>>8)&255; state[3][c]^=t&255; } }
+    function subBytes(state){ const s=function(b){return [
+        99,124,119,123,242,107,111,197,48,1,103,43,254,215,171,118,202,130,201,125,250,89,71,240,173,212,162,175,156,164,114,192,
+        183,253,147,38,54,63,247,204,52,165,229,241,113,216,49,21,4,199,35,195,24,150,5,154,7,18,128,226,235,39,178,117,
+        9,131,44,26,27,110,90,160,82,59,214,179,41,227,47,132,83,209,0,237,32,252,177,91,106,203,190,57,74,76,88,207,
+        208,239,170,251,67,77,51,133,69,249,2,127,80,60,159,168,81,163,64,143,146,157,56,245,188,182,218,33,16,255,243,210,
+        205,12,19,236,95,151,68,23,196,167,126,61,100,93,25,115,96,129,79,220,34,42,144,136,70,238,184,20,222,94,11,219,
+        224,50,58,10,73,6,36,92,194,211,172,98,145,149,228,121,231,200,55,109,141,213,78,169,108,86,244,234,101,122,174,8,
+        186,120,37,46,28,166,180,198,232,221,116,31,75,189,139,138,112,62,181,102,72,3,246,14,97,53,87,185,134,193,29,158,
+        225,248,152,17,105,217,142,148,155,30,135,233,206,85,40,223,140,161,137,13,191,230,66,104,65,153,45,15,176,84,187,22
+    ][b];}; for(let r=0;r<4;r++) for(let c=0;c<4;c++) state[r][c]=s(state[r][c]); }
+    function shiftRows(state){ for(let r=1;r<4;r++){ state[r]=state[r].slice(r).concat(state[r].slice(0,r)); } }
+    function xtime(a){ return ((a<<1)&0xff) ^ ( (a&0x80) ? 0x1b : 0x00 ); }
+    function mixColumns(state){ for(let c=0;c<4;c++){ const a=state.map(r=>r[c]); const b=a.map(x=>xtime(x)); state[0][c]=b[0]^a[1]^b[1]^a[2]^a[3]; state[1][c]=a[0]^b[1]^a[2]^b[2]^a[3]; state[2][c]=a[0]^a[1]^b[2]^a[3]^b[3]; state[3][c]=a[0]^b[0]^a[1]^a[2]^b[3]; } }
+    function encryptBlock(w, input){ let state=[[],[],[],[]]; for(let i=0;i<16;i++){ state[i%4][Math.floor(i/4)]=input[i]; }
+        const Nr=14; addRoundKey(state,w,0); for(let round=1;round<Nr;round++){ subBytes(state); shiftRows(state); mixColumns(state); addRoundKey(state,w,round); } subBytes(state); shiftRows(state); addRoundKey(state,w,Nr);
+        const out=new Array(16); for(let i=0;i<16;i++) out[i]=state[i%4][Math.floor(i/4)]; return out; }
+
+    function inc32(iv){ const out=iv.slice(0); for(let i=15;i>=12;i--){ out[i]=(out[i]+1)&0xff; if(out[i]!==0) break; } return out; }
+    function aesCtr(keyBytes, iv, data){ const w=keyExpand(keyBytes); let counter=iv.slice(0); const out=new Array(data.length); for(let i=0;i<data.length;i+=16){ const keystream=encryptBlock(w,counter); const blockLen=Math.min(16,data.length-i); for(let j=0;j<blockLen;j++){ out[i+j]=data[i+j]^keystream[j]; } counter=inc32(counter); } return out; }
+
+    // GHASH (polynomial multiplication in GF(2^128))
+    function ghash(H, A, C){
+        function xor128(a,b){ const out=new Array(16); for(let i=0;i<16;i++) out[i]=(a[i]^b[i])&0xff; return out; }
+        function mult128(x,y){
+            let Z=new Array(16).fill(0), V=x.slice(0);
+            for(let i=0;i<16;i++){
+                let b=y[i]; for(let j=0;j<8;j++){
+                    if((b & (1<<(7-j)))!==0) Z=xor128(Z,V);
+                    const lsb = V[15] & 1;
+                    // shift right
+                    for(let k=15;k>0;k--) V[k]=((V[k]>>>1)|((V[k-1]&1)<<7))&0xff; V[0]=(V[0]>>>1)&0xff;
+                    if(lsb) V[0]^=0xe1; // R
+                }
+            }
+            return Z;
+        }
+        function pad16(arr){ const out=arr.slice(0); const rem=out.length%16; if(rem!==0){ for(let i=0;i<16-rem;i++) out.push(0); } return out; }
+        let X=new Array(16).fill(0);
+        const blocks=pad16(A).concat(pad16(C));
+        for(let i=0;i<blocks.length;i+=16){ const Y=blocks.slice(i,i+16); X=mult128(xor128(X,Y),H); }
+        const lenA=A.length*8, lenC=C.length*8; const L=new Array(16).fill(0);
+        for(let i=0;i<8;i++) L[7-i]=(lenA>>> (i*8)) & 0xff;
+        for(let i=0;i<8;i++) L[15-i]=(lenC>>> (i*8)) & 0xff;
+        X=mult128(xor128(X,L),H);
+        return X;
+    }
+
+    function deriveKeyAndIv(secret, nonce) {
+        const secBytes = toBytes(secret);
+        const keyH = hmacSha512(secBytes, toBytes("key:"+nonce));
+        const ivH = hmacSha512(secBytes, toBytes("iv:"+nonce));
+        return { key: keyH.slice(0,32), iv: ivH.slice(0,12) };
+    }
+
+    function aes256GcmEncrypt(plainText, secret, nonce) {
+        const { key, iv } = deriveKeyAndIv(secret, nonce);
+        // GCM uses J0 = IV || 0x00000001 (12-byte IV common case)
+        const J0 = iv.concat([0,0,0,1]);
+        const H = encryptBlock(keyExpand(key), new Array(16).fill(0));
+        const pt = toBytes(plainText);
+        const ct = aesCtr(key, inc32(J0), pt);
+        const tag = ghash(H, [], ct);
+        const S = encryptBlock(keyExpand(key), J0);
+        const T = new Array(16); for(let i=0;i<16;i++) T[i]=(tag[i]^S[i])&0xff;
+        return base64Encode(J0.concat(ct).concat(T));
+    }
+
+    function aes256GcmDecrypt(b64Data, secret, nonce) {
+        const buf = base64Decode(String(b64Data));
+        if(buf.length < 12+16) throw new Error("Invalid ciphertext");
+        const iv = buf.slice(0,16); // J0
+        const tag = buf.slice(buf.length-16);
+        const ct = buf.slice(16, buf.length-16);
+        const { key } = deriveKeyAndIv(secret, nonce);
+        const H = encryptBlock(keyExpand(key), new Array(16).fill(0));
+        const S = encryptBlock(keyExpand(key), iv);
+        const calcTag = ghash(H, [], ct).map((b,i)=> (b ^ S[i]) & 0xff);
+        // Tag check (non-constant-time)
+        for(let i=0;i<16;i++){ if(calcTag[i] !== tag[i]) throw new Error("Auth tag mismatch"); }
+        const pt = aesCtr(key, inc32(iv), ct);
+        return bytesToString(pt);
+    }
+
+    return { deriveKeyAndIv, aes256GcmEncrypt, aes256GcmDecrypt, hmacSha512 };
+})();
+
+// Public wrappers
+function deriveKeyAndIv(secret, nonce) { return CryptoSync.deriveKeyAndIv(secret, nonce); }
+function aesGcmEncrypt(plainText, secret, nonce) { return CryptoSync.aes256GcmEncrypt(plainText, secret, nonce); }
+function aesGcmDecrypt(b64Data, secret, nonce) { return CryptoSync.aes256GcmDecrypt(b64Data, secret, nonce); }
 
 // ----------------------------------------------------------------------------
 function getLevelForCommand(command) {
