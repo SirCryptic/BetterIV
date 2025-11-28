@@ -9,17 +9,3 @@ Resources for enhancing GTA Connected Servers [Specifically IV] (These also serv
 </p>
 
 ---
-
-## Status  
-📢 **Announcement – Resources Archived**  
-
-Development and updates for these GTA Connected resources have officially ended.  
-No further updates, fixes, or support will be provided.  
-
-Please note:  
-- This is **the only public version** of these resources that will ever be released.  
-- You may **not see the same features or content** shown on my personal server or in videos made by others.  
-
-These resources remain public for **archival and reference purposes only**.  
-
-— **SirCryptic**
