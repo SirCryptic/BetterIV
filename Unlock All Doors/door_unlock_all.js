@@ -1,3 +1,7 @@
+// Author: SirCryptic - for GTA Connected IV & EFLC 
+// Description: Force unlocks all known locked doors by hash and position, and terminates known lock script brains.
+// Contributers <3 https://github.com/PerikiyoXD // PXD , thankyou
+
 "use strict";
 
 const LOCK_BRAINS = [
