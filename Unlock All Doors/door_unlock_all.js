@@ -1,5 +1,3 @@
-// Author: SirCryptic - for GTA Connected IV & EFLC 
-// Description: Force unlocks all known locked doors by hash and position, and terminates known lock script brains.
 "use strict";
 
 const LOCK_BRAINS = [
@@ -265,25 +263,14 @@ const FIXED_ANCHORS = [
   { hash: 2140720422, x: -386.9, y: 1486.4, z: 9.9 }
 ];
 
-const APPLY_INTERVAL_MS = 200;
-const LOCK_BRAIN_KILL_INTERVAL_MS = 3000;
-const FIXED_ANCHOR_INTERVAL_MS = 450;
-const GLOBAL_SWEEP_INTERVAL_MS = 1000;
-const GLOBAL_SWEEP_ANCHORS_PER_TICK = 2;
-const GLOBAL_SWEEP_HASHES_PER_ANCHOR = 10;
-
+// How often to kill lock brains (they can respawn and re-lock doors).
+const LOCK_BRAIN_KILL_INTERVAL_MS = 4000;
 // Test mode: run one full unlock sweep on resource start, then never re-apply on process ticks.
 const TEST_SINGLE_SWEEP_NO_REAPPLY = false;
 
-let lastApply = 0;
 let modelHashes = [];
 let initialized = false;
-let globalSweepIndex = 0;
-let globalSweepAnchors = [];
-let globalSweepModelIndex = 0;
 let lastBrainKillAt = 0;
-let lastFixedUnlockAt = 0;
-let lastGlobalSweepAt = 0;
 
 function getNowMs() {
   try {
@@ -367,30 +354,7 @@ function buildHashes() {
   initialized = true;
 }
 
-function buildGlobalSweepAnchors() {
-  const uniq = {};
-  globalSweepAnchors = [];
-
-  for (let i = 0; i < FIXED_ANCHORS.length; i++) {
-    const a = FIXED_ANCHORS[i];
-    if (!a) continue;
-
-    const x = Number(a.x);
-    const y = Number(a.y);
-    const z = Number(a.z);
-    if (!isFinite(x) || !isFinite(y) || !isFinite(z)) continue;
-
-    const key = `${Math.round(x * 10) / 10}|${Math.round(y * 10) / 10}|${Math.round(z * 10) / 10}`;
-    if (uniq[key]) continue;
-
-    uniq[key] = true;
-    globalSweepAnchors.push({ x: x, y: y, z: z });
-  }
-
-  if (!globalSweepAnchors.length) {
-    globalSweepAnchors.push({ x: 0.0, y: 0.0, z: 0.0 });
-  }
-}
+function buildGlobalSweepAnchors() {}
 
 function unlockFixedAnchors() {
   let count = 0;
@@ -408,47 +372,8 @@ function unlockFixedAnchors() {
   return count;
 }
 
-// Force unlock by sweeping static world anchors (no player-position dependency)
-function unlockGlobalSweepBatch() {
-  if (!modelHashes.length || !globalSweepAnchors.length) return 0;
-
-  const offsets = [
-    [0.0, 0.0, 0.0],
-    [2.0, 0.0, 0.0], [-2.0, 0.0, 0.0],
-    [0.0, 2.0, 0.0], [0.0, -2.0, 0.0],
-    [4.0, 0.0, 0.0], [-4.0, 0.0, 0.0],
-    [0.0, 4.0, 0.0], [0.0, -4.0, 0.0]
-  ];
-
-  let count = 0;
-  const anchorCount = globalSweepAnchors.length;
-  const steps = Math.min(GLOBAL_SWEEP_ANCHORS_PER_TICK, anchorCount);
-  const hashSteps = Math.min(GLOBAL_SWEEP_HASHES_PER_ANCHOR, modelHashes.length);
-
-  for (let a = 0; a < steps; a++) {
-    const idx = (globalSweepIndex + a) % anchorCount;
-    const p = globalSweepAnchors[idx];
-    if (!p) continue;
-
-    for (let i = 0; i < hashSteps; i++) {
-      const h = modelHashes[(globalSweepModelIndex + i) % modelHashes.length];
-
-      for (let j = 0; j < offsets.length; j++) {
-        const o = offsets[j];
-        const x = p.x + o[0];
-        const y = p.y + o[1];
-        const z = p.z + o[2];
-
-        if (setDoorUnlockedAt(h, x, y, z)) count++;
-      }
-    }
-  }
-
-  globalSweepModelIndex = (globalSweepModelIndex + hashSteps) % modelHashes.length;
-  globalSweepIndex = (globalSweepIndex + steps) % anchorCount;
-
-  return count;
-}
+// Dead — replaced by unlockGlobalSweepFullOnce called once on start.
+function unlockGlobalSweepBatch() {}
 
 function unlockGlobalSweepFullOnce() {
   if (!modelHashes.length || !globalSweepAnchors.length) return 0;
@@ -483,38 +408,19 @@ function unlockGlobalSweepFullOnce() {
   return count;
 }
 
-function applyIfDue(force) {
-  const now = getNowMs();
-  if (!force) {
-    const elapsed = now - lastApply;
-    if (elapsed >= 0 && elapsed < APPLY_INTERVAL_MS) return;
-  }
-  lastApply = now;
-
+// Called periodically: kill brains then re-unlock fixed anchors.
+// setStateOfClosestDoorOfType is latched — no need to spam it every tick.
+// We only need to re-unlock after a brain kill cycle (brains are what re-lock doors).
+function applyBrainKillCycle() {
   if (!initialized) buildHashes();
-  if (!globalSweepAnchors.length) buildGlobalSweepAnchors();
-
-  if (force || isIntervalDue(now, lastBrainKillAt, LOCK_BRAIN_KILL_INTERVAL_MS)) {
-    killLockBrains();
-    lastBrainKillAt = now;
-  }
-
-  if (force || isIntervalDue(now, lastFixedUnlockAt, FIXED_ANCHOR_INTERVAL_MS)) {
-    unlockFixedAnchors();
-    lastFixedUnlockAt = now;
-  }
-
-  if (force || isIntervalDue(now, lastGlobalSweepAt, GLOBAL_SWEEP_INTERVAL_MS)) {
-    unlockGlobalSweepBatch();
-    lastGlobalSweepAt = now;
-  }
+  killLockBrains();
+  unlockFixedAnchors();
 }
 
 addEventHandler("OnResourceStart", function(event, resource) {
   try {
     if (resource && resource !== thisResource) return;
     buildHashes();
-    buildGlobalSweepAnchors();
 
     if (TEST_SINGLE_SWEEP_NO_REAPPLY) {
       killLockBrains();
@@ -524,12 +430,21 @@ addEventHandler("OnResourceStart", function(event, resource) {
       return;
     }
 
-    applyIfDue(true);
+    // Full sweep once on start to open everything in the world.
+    killLockBrains();
+    unlockFixedAnchors();
+    unlockGlobalSweepFullOnce();
+    lastBrainKillAt = getNowMs();
   } catch (e) {}
 });
 
 addEventHandler("OnProcess", function() {
   if (TEST_SINGLE_SWEEP_NO_REAPPLY) return;
-  try { applyIfDue(false); } catch (e) {}
+  try {
+    const now = getNowMs();
+    if (isIntervalDue(now, lastBrainKillAt, LOCK_BRAIN_KILL_INTERVAL_MS)) {
+      applyBrainKillCycle();
+      lastBrainKillAt = now;
+    }
+  } catch (e) {}
 });
-
