@@ -10,7 +10,7 @@ const LOCK_BRAINS = [
   "ambcabaret"
 ];
 
-// All known locked door model names.
+// All known locked door model names. This is not exhaustive, but should cover most doors that are locked by script brains.
 const DOOR_MODEL_NAMES = [
   "BM_lawyerDoor",
   "BM_lawyerDoor_2a",
@@ -265,13 +265,46 @@ const FIXED_ANCHORS = [
   { hash: 2140720422, x: -386.9, y: 1486.4, z: 9.9 }
 ];
 
-const APPLY_INTERVAL_MS = 150;
-const GLOBAL_SWEEP_ANCHORS_PER_TICK = 6;
+const APPLY_INTERVAL_MS = 200;
+const LOCK_BRAIN_KILL_INTERVAL_MS = 3000;
+const FIXED_ANCHOR_INTERVAL_MS = 450;
+const GLOBAL_SWEEP_INTERVAL_MS = 1000;
+const GLOBAL_SWEEP_ANCHORS_PER_TICK = 2;
+const GLOBAL_SWEEP_HASHES_PER_ANCHOR = 10;
+
+// Test mode: run one full unlock sweep on resource start, then never re-apply on process ticks.
+const TEST_SINGLE_SWEEP_NO_REAPPLY = false;
+
 let lastApply = 0;
 let modelHashes = [];
 let initialized = false;
 let globalSweepIndex = 0;
 let globalSweepAnchors = [];
+let globalSweepModelIndex = 0;
+let lastBrainKillAt = 0;
+let lastFixedUnlockAt = 0;
+let lastGlobalSweepAt = 0;
+
+function getNowMs() {
+  try {
+    if (typeof natives !== "undefined" && typeof natives.getGameTimer === "function") {
+      return natives.getGameTimer();
+    }
+  } catch (e) {}
+
+  try {
+    if (typeof GetGameTimer === "function") {
+      return GetGameTimer();
+    }
+  } catch (e) {}
+
+  return Date.now();
+}
+
+function isIntervalDue(now, lastAt, intervalMs) {
+  const elapsed = now - lastAt;
+  return elapsed < 0 || elapsed >= intervalMs;
+}
 
 function showMsg(msg) {
   try {
@@ -390,10 +423,47 @@ function unlockGlobalSweepBatch() {
   let count = 0;
   const anchorCount = globalSweepAnchors.length;
   const steps = Math.min(GLOBAL_SWEEP_ANCHORS_PER_TICK, anchorCount);
+  const hashSteps = Math.min(GLOBAL_SWEEP_HASHES_PER_ANCHOR, modelHashes.length);
 
   for (let a = 0; a < steps; a++) {
     const idx = (globalSweepIndex + a) % anchorCount;
     const p = globalSweepAnchors[idx];
+    if (!p) continue;
+
+    for (let i = 0; i < hashSteps; i++) {
+      const h = modelHashes[(globalSweepModelIndex + i) % modelHashes.length];
+
+      for (let j = 0; j < offsets.length; j++) {
+        const o = offsets[j];
+        const x = p.x + o[0];
+        const y = p.y + o[1];
+        const z = p.z + o[2];
+
+        if (setDoorUnlockedAt(h, x, y, z)) count++;
+      }
+    }
+  }
+
+  globalSweepModelIndex = (globalSweepModelIndex + hashSteps) % modelHashes.length;
+  globalSweepIndex = (globalSweepIndex + steps) % anchorCount;
+
+  return count;
+}
+
+function unlockGlobalSweepFullOnce() {
+  if (!modelHashes.length || !globalSweepAnchors.length) return 0;
+
+  const offsets = [
+    [0.0, 0.0, 0.0],
+    [2.0, 0.0, 0.0], [-2.0, 0.0, 0.0],
+    [0.0, 2.0, 0.0], [0.0, -2.0, 0.0],
+    [4.0, 0.0, 0.0], [-4.0, 0.0, 0.0],
+    [0.0, 4.0, 0.0], [0.0, -4.0, 0.0]
+  ];
+
+  let count = 0;
+  for (let a = 0; a < globalSweepAnchors.length; a++) {
+    const p = globalSweepAnchors[a];
     if (!p) continue;
 
     for (let i = 0; i < modelHashes.length; i++) {
@@ -410,22 +480,34 @@ function unlockGlobalSweepBatch() {
     }
   }
 
-  globalSweepIndex = (globalSweepIndex + steps) % anchorCount;
-
   return count;
 }
 
 function applyIfDue(force) {
-  const now = Date.now ? Date.now() : (new Date()).getTime();
-  if (!force && (now - lastApply) < APPLY_INTERVAL_MS) return;
+  const now = getNowMs();
+  if (!force) {
+    const elapsed = now - lastApply;
+    if (elapsed >= 0 && elapsed < APPLY_INTERVAL_MS) return;
+  }
   lastApply = now;
 
   if (!initialized) buildHashes();
   if (!globalSweepAnchors.length) buildGlobalSweepAnchors();
 
-  killLockBrains();
-  unlockFixedAnchors();
-  unlockGlobalSweepBatch();
+  if (force || isIntervalDue(now, lastBrainKillAt, LOCK_BRAIN_KILL_INTERVAL_MS)) {
+    killLockBrains();
+    lastBrainKillAt = now;
+  }
+
+  if (force || isIntervalDue(now, lastFixedUnlockAt, FIXED_ANCHOR_INTERVAL_MS)) {
+    unlockFixedAnchors();
+    lastFixedUnlockAt = now;
+  }
+
+  if (force || isIntervalDue(now, lastGlobalSweepAt, GLOBAL_SWEEP_INTERVAL_MS)) {
+    unlockGlobalSweepBatch();
+    lastGlobalSweepAt = now;
+  }
 }
 
 addEventHandler("OnResourceStart", function(event, resource) {
@@ -433,10 +515,21 @@ addEventHandler("OnResourceStart", function(event, resource) {
     if (resource && resource !== thisResource) return;
     buildHashes();
     buildGlobalSweepAnchors();
+
+    if (TEST_SINGLE_SWEEP_NO_REAPPLY) {
+      killLockBrains();
+      unlockFixedAnchors();
+      unlockGlobalSweepFullOnce();
+      showMsg("Door unlock test mode: one sweep applied (no reapply).");
+      return;
+    }
+
     applyIfDue(true);
   } catch (e) {}
 });
 
 addEventHandler("OnProcess", function() {
+  if (TEST_SINGLE_SWEEP_NO_REAPPLY) return;
   try { applyIfDue(false); } catch (e) {}
 });
+
