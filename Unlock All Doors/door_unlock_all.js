@@ -1,5 +1,3 @@
-// Author: SirCryptic - for GTA Connected IV & EFLC 
-// Description: Force unlocks all known locked doors by hash and position, and terminates known lock script brains.
 "use strict";
 
 const LOCK_BRAINS = [
@@ -9,8 +7,6 @@ const LOCK_BRAINS = [
   "ambCabaret",
   "ambcabaret"
 ];
-
-// All known locked door model names. This is not exhaustive, but should cover most doors that are locked by script brains.
 const DOOR_MODEL_NAMES = [
   "BM_lawyerDoor",
   "BM_lawyerDoor_2a",
@@ -194,259 +190,301 @@ const DOOR_MODEL_NAMES = [
   "E2_Sky_door_R02"
 ];
 
-// Hardcoded anchors known to be re-locked by script brains
+// Episode constants matching gta.ivEpisode
+const EP_IV = 0;
+const EP_TLAD = 1;
+const EP_TBOGT = 2;
+
+// If an anchor has no `episodes` field, it's applied in all episodes.
 const FIXED_ANCHORS = [
-  { hash: -1452339441, x: 64535.0, y: 1223.0, z: 29.0 },
-  { hash: -1452339441, x: 865.7, y: -517.8, z: 16.5 },
-  { hash: 257820338, x: 850.8, y: -517.8, z: 16.5 },
-  { hash: -1452339441, x: -1247.0, y: 1540.0, z: 26.0 },
-  { hash: -1452339441, x: -1246.0, y: 1560.0, z: 26.0 },
-  { hash: 807349477, x: 1314.0, y: 71.0, z: 42.0 },
-  { hash: 807349477, x: 1367.0, y: 192.0, z: 28.0 },
-  { hash: 807349477, x: 64323.0, y: 1096.0, z: 25.0 },
-  { hash: -2113580896, x: 896.0, y: -504.0, z: 15.0 },
-  { hash: 419786306, x: 882.0, y: -29.0, z: 29.0 },
-  { hash: 419786306, x: 65439.0, y: 878.0, z: 15.0 },
-  { hash: 419786306, x: 64574.0, y: 893.0, z: 14.0 },
-  { hash: -431164822, x: -28.0, y: -463.0, z: 16.0 },
-  { hash: 866127123, x: -28.0, y: -466.0, z: 16.0 },
-  { hash: -431164822, x: -28.0, y: -467.0, z: 16.0 },
-  { hash: 866127123, x: -28.0, y: -470.0, z: 16.0 },
-  { hash: -223135715, x: -160.0, y: 591.0, z: 119.0 },
-  { hash: -223135715, x: -160.0, y: 593.0, z: 119.0 },
-  { hash: -308312378, x: 95.0, y: 64854.0, z: 15.0 },
-  { hash: 487482787, x: 95.0, y: 64851.0, z: 15.0 },
-  { hash: 693041505, x: 815.0, y: 65278.0, z: 16.0 },
-  { hash: 693041505, x: 821.0, y: 65271.0, z: 16.0 },
-  { hash: 804737190, x: 561.9761, y: 1391.626, z: 30.855 },
-  { hash: 387699963, x: 943.0, y: -493.0, z: 16.0 },
-  { hash: 261592072, x: 597.0, y: 1400.0, z: 12.0 },
-  { hash: 1033979537, x: -126.0, y: 1500.0, z: 23.0 },
-  { hash: 1135556036, x: 1283.0, y: 400.0, z: 23.0 },
-  { hash: -842872319, x: 1286.0, y: 400.0, z: 23.0 },
-  { hash: 880887899, x: 64395.0, y: 65164.0, z: 4.0 },
-  { hash: 641313740, x: 64395.0, y: 65158.0, z: 4.0 },
-  { hash: -269541707, x: 64296.0, y: 1072.0, z: 20.0 },
-  { hash: -269541707, x: 64293.0, y: 1074.0, z: 20.0 },
-  { hash: -1413798865, x: 1143.0, y: 1670.0, z: 17.0 },
+    { hash: -1452339441, x: 64535.0, y: 1223.0, z: 29.0 },
+    { hash: -1452339441, x: 865.7, y: -517.8, z: 16.5 },
+    { hash: 257820338, x: 850.8, y: -517.8, z: 16.5 },
+    { hash: -1452339441, x: -1247.0, y: 1540.0, z: 26.0 },
+    { hash: -1452339441, x: -1246.0, y: 1560.0, z: 26.0 },
+    { hash: 807349477, x: 1314.0, y: 71.0, z: 42.0 },
+    { hash: 807349477, x: 1367.0, y: 192.0, z: 28.0 },
+    { hash: 807349477, x: 64323.0, y: 1096.0, z: 25.0 },
+    { hash: -2113580896, x: 896.0, y: -504.0, z: 15.0 },
+    { hash: 419786306, x: 882.0, y: -29.0, z: 29.0 },
+    { hash: 419786306, x: 65439.0, y: 878.0, z: 15.0 },
+    { hash: 419786306, x: 64574.0, y: 893.0, z: 14.0 },
+    { hash: -431164822, x: -28.0, y: -463.0, z: 16.0 },
+    { hash: 866127123, x: -28.0, y: -466.0, z: 16.0 },
+    { hash: -431164822, x: -28.0, y: -467.0, z: 16.0 },
+    { hash: 866127123, x: -28.0, y: -470.0, z: 16.0 },
+    { hash: -223135715, x: -160.0, y: 591.0, z: 119.0 },
+    { hash: -223135715, x: -160.0, y: 593.0, z: 119.0 },
+    { hash: -308312378, x: 95.0, y: 64854.0, z: 15.0 },
+    { hash: 487482787, x: 95.0, y: 64851.0, z: 15.0 },
+    { hash: 693041505, x: 815.0, y: 65278.0, z: 16.0 },
+    { hash: 693041505, x: 821.0, y: 65271.0, z: 16.0 },
+    { hash: 804737190, x: 561.9761, y: 1391.626, z: 30.855 },
+    { hash: 387699963, x: 943.0, y: -493.0, z: 16.0 },
+    { hash: 261592072, x: 597.0, y: 1400.0, z: 12.0 },
+    { hash: 1033979537, x: -126.0, y: 1500.0, z: 23.0 },
+    { hash: 1135556036, x: 1283.0, y: 400.0, z: 23.0 },
+    { hash: -842872319, x: 1286.0, y: 400.0, z: 23.0 },
+    { hash: -269541707, x: 64296.0, y: 1072.0, z: 20.0 },
+    { hash: -269541707, x: 64293.0, y: 1074.0, z: 20.0 },
+    { hash: -1413798865, x: 1143.0, y: 1670.0, z: 17.0 },
 
-  // Conrad/Cabaret front and near-front anchors.
-  { hashName: "cabaret_door_L", x: 965.7597, y: -274.3801, z: 17.2717 },
-  { hashName: "cabaret_door_R", x: 966.3721, y: -277.2479, z: 17.3736 },
-  { hashName: "cabaret_door_L", x: 965.8656, y: -274.3706, z: 17.2718 },
-  { hashName: "cabaret_door_R", x: 966.4907, y: -276.1051, z: 17.2730 },
-  { hashName: "cabaret_door_L", x: 957.5000, y: -273.4200, z: 18.4700 },
-  { hashName: "cabaret_door_R", x: 957.5000, y: -273.4200, z: 18.4700 },
-  { hashName: "cabaret_door_L", x: 965.0354, y: -271.3837, z: 18.1729 },
-  { hashName: "cabaret_door_R", x: 965.0354, y: -271.3837, z: 18.1729 },
+    { hashName: "cabaret_door_L", x: 965.7597, y: -274.3801, z: 17.2717 },
+    { hashName: "cabaret_door_R", x: 966.3721, y: -277.2479, z: 17.3736 },
+    { hashName: "cabaret_door_L", x: 965.8656, y: -274.3706, z: 17.2718 },
+    { hashName: "cabaret_door_R", x: 966.4907, y: -276.1051, z: 17.2730 },
+    { hashName: "cabaret_door_L", x: 957.5000, y: -273.4200, z: 18.4700 },
+    { hashName: "cabaret_door_R", x: 957.5000, y: -273.4200, z: 18.4700 },
+    { hashName: "cabaret_door_L", x: 965.0354, y: -271.3837, z: 18.1729 },
+    { hashName: "cabaret_door_R", x: 965.0354, y: -271.3837, z: 18.1729 },
 
-  // Additional scripted lock hashes found in mission/ambient scripts.
-  { hash: -1212308722, x: 65008.0, y: 1262.0, z: 18.0 },
-  { hash: -1212308722, x: -528.3, y: 1262.2, z: 17.7 },
+    { hash: -1212308722, x: 65008.0, y: 1262.0, z: 18.0 },
+    { hash: -1212308722, x: -528.3, y: 1262.2, z: 17.7 },
 
-  { hash: 790510853, x: 65065.0, y: 148.0, z: 10.0 },
-  { hash: -175426899, x: 65068.0, y: 153.0, z: 10.0 },
-  { hash: -175426899, x: -468.0, y: 153.0, z: 10.0 },
+    // TBOGT only
+    { hash: 790510853, x: 65065.0, y: 148.0, z: 10.0, episodes: [EP_TBOGT] },
+    { hash: -175426899, x: 65068.0, y: 153.0, z: 10.0, episodes: [EP_TBOGT] },
+    { hash: -175426899, x: -468.0, y: 153.0, z: 10.0, episodes: [EP_TBOGT] },
 
-  { hash: 1461381085, x: 65387.0, y: 65281.0, z: 36.0 },
+    // TLAD + TBOGT
+    { hash: 1643309849, x: 63810.0, y: 342.0, z: 27.0, episodes: [EP_TLAD, EP_TBOGT] },
+    { hash: 1643309849, x: 63821.0, y: 354.0, z: 26.0, episodes: [EP_TLAD, EP_TBOGT] },
+    { hash: 1292729623, x: 64913.0, y: 1207.0, z: 6.0, episodes: [EP_TLAD, EP_TBOGT] },
+    { hash: 566666890, x: 64909.0, y: 1207.0, z: 6.0, episodes: [EP_TLAD, EP_TBOGT] },
 
-  { hash: 1643309849, x: 63810.0, y: 342.0, z: 27.0 },
-  { hash: 1643309849, x: 63821.0, y: 354.0, z: 26.0 },
+    { hash: 2124429686, x: 63586.0, y: 65458.0, z: 7.0 },
 
-  { hash: 1292729623, x: 64913.0, y: 1207.0, z: 6.0 },
-  { hash: 566666890, x: 64909.0, y: 1207.0, z: 6.0 },
-
-  { hash: 2124429686, x: 63586.0, y: 65458.0, z: 7.0 },
-
-  { hash: -397503281, x: -474.0, y: 162.0, z: 10.0 },
-
-  { hash: 2140720422, x: -390.2, y: 1487.7, z: 10.8 },
-  { hash: 2140720422, x: -387.503, y: 1486.445, z: 10.847 },
-  { hash: 2140720422, x: -386.9, y: 1486.4, z: 9.9 }
+    // TBOGT only
+    { hash: -397503281, x: -474.0, y: 162.0, z: 10.0, episodes: [EP_TBOGT] },
+    { hash: 2140720422, x: -390.2, y: 1487.7, z: 10.8, episodes: [EP_TBOGT] },
+    { hash: 2140720422, x: -387.503, y: 1486.445, z: 10.847, episodes: [EP_TBOGT] },
+    { hash: 2140720422, x: -386.9, y: 1486.4, z: 9.9, episodes: [EP_TBOGT] }
 ];
 
-// How often to kill lock brains (they can respawn and re-lock doors).
 const LOCK_BRAIN_KILL_INTERVAL_MS = 4000;
-// Test mode: run one full unlock sweep on resource start, then never re-apply on process ticks.
 const TEST_SINGLE_SWEEP_NO_REAPPLY = false;
 
-let modelHashes = [];
+let doorModelHashes = [];
+let activeAnchors = [];
 let initialized = false;
-let lastBrainKillAt = 0;
+let nextBrainKillAt = 0;
 
-function getNowMs() {
-  try {
+// --- Resolved-once function references ---
+
+const getNowMs = (function () {
     if (typeof natives !== "undefined" && typeof natives.getGameTimer === "function") {
-      return natives.getGameTimer();
+        return function () { return natives.getGameTimer(); };
     }
-  } catch (e) {}
-
-  try {
     if (typeof GetGameTimer === "function") {
-      return GetGameTimer();
+        return function () { return GetGameTimer(); };
     }
-  } catch (e) {}
+    return function () { return Date.now(); };
+})();
 
-  return Date.now();
+const setDoorUnlockedAt = (typeof Vec3 !== "undefined")
+    ? function (modelHash, worldX, worldY, worldZ) {
+        try {
+            natives.setStateOfClosestDoorOfType(modelHash, new Vec3(worldX, worldY, worldZ), 0, 0.0);
+        } catch (e) {
+            console.log(`[err]  setStateOfClosestDoorOfType(hash=${modelHash}, x=${worldX}, y=${worldY}, z=${worldZ}) threw: ${e && e.message}`);
+        }
+    }
+    : function (modelHash, worldX, worldY, worldZ) {
+        try {
+            natives.setStateOfClosestDoorOfType(modelHash, worldX, worldY, worldZ, 0, 0.0);
+        } catch (e) {
+            console.log(`[err]  setStateOfClosestDoorOfType(hash=${modelHash}, x=${worldX}, y=${worldY}, z=${worldZ}) threw: ${e && e.message}`);
+        }
+    };
+
+// --- Helpers ---
+
+function isIntervalDue(nowMs, nextDueMs) {
+    return nowMs >= nextDueMs;
 }
 
-function isIntervalDue(now, lastAt, intervalMs) {
-  const elapsed = now - lastAt;
-  return elapsed < 0 || elapsed >= intervalMs;
+function getCurrentEpisode() {
+    try {
+        if (typeof gta !== "undefined" && typeof gta.ivEpisode !== "undefined") {
+            return gta.ivEpisode | 0;
+        }
+    } catch (e) {
+        console.log(`[err]  getCurrentEpisode threw: ${e && e.message}`);
+    }
+    return EP_IV;
 }
 
-function showMsg(msg) {
-  try {
-    if (typeof showMessage === "function") {
-      showMessage(msg);
-      return;
+function anchorAppliesToEpisode(anchor, episode) {
+    if (!anchor.episodes) return true;
+    for (let i = 0; i < anchor.episodes.length; i++) {
+        if (anchor.episodes[i] === episode) return true;
     }
-    if (typeof natives !== "undefined" && typeof natives.printStringWithLiteralStringNow === "function") {
-      natives.printStringWithLiteralStringNow("STRING", msg, 2500, true);
-    }
-  } catch (e) {}
+    return false;
 }
 
-function getHash(name) {
-  try {
-    if (natives && typeof natives.getHashKey === "function") {
-      return natives.getHashKey(name);
+function showMsg(text) {
+    try {
+        if (typeof showMessage === "function") {
+            showMessage(text);
+            return;
+        }
+        if (typeof natives !== "undefined" && typeof natives.printStringWithLiteralStringNow === "function") {
+            natives.printStringWithLiteralStringNow("STRING", text, 2500, true);
+        }
+    } catch (e) {
+        console.log(`[err]  showMsg threw: ${e && e.message}`);
     }
-  } catch (e) {}
-  return 0;
+}
+
+function getHash(modelName) {
+    try {
+        if (natives && typeof natives.getHashKey === "function") {
+            return natives.getHashKey(modelName);
+        }
+    } catch (e) {
+        console.log(`[err]  natives.getHashKey(${JSON.stringify(modelName)}) threw: ${e && e.message}`);
+    }
+    return 0;
 }
 
 function killLockBrains() {
-  try {
     if (!natives || typeof natives.terminateAllScriptsWithThisName !== "function") return;
     for (let i = 0; i < LOCK_BRAINS.length; i++) {
-      try { natives.terminateAllScriptsWithThisName(LOCK_BRAINS[i]); } catch (e) {}
+        const brainName = LOCK_BRAINS[i];
+        try {
+            natives.terminateAllScriptsWithThisName(brainName);
+        } catch (e) {
+            console.log(`[err]  terminateAllScriptsWithThisName(${JSON.stringify(brainName)}) threw: ${e && e.message}`);
+        }
     }
-  } catch (e) {}
 }
 
-function setDoorUnlockedAt(hash, x, y, z) {
-  try {
-    if (!natives || typeof natives.setStateOfClosestDoorOfType !== "function") return false;
+// --- One-time setup ---
 
-    if (typeof Vec3 !== "undefined") {
-      natives.setStateOfClosestDoorOfType(hash, new Vec3(x, y, z), 0, 0.0);
-      return true;
+function buildDoorModelHashes() {
+    const seenHashes = {};
+    doorModelHashes = [];
+
+    for (let i = 0; i < DOOR_MODEL_NAMES.length; i++) {
+        const modelHash = getHash(DOOR_MODEL_NAMES[i]);
+        if (modelHash && !seenHashes[modelHash]) {
+            seenHashes[modelHash] = true;
+            doorModelHashes.push(modelHash);
+        }
     }
-
-    natives.setStateOfClosestDoorOfType(hash, x, y, z, 0, 0.0);
-    return true;
-  } catch (e) {
-    return false;
-  }
 }
 
-function buildHashes() {
-  const uniq = {};
-  modelHashes = [];
+function buildActiveAnchors() {
+    const episode = getCurrentEpisode();
+    activeAnchors = [];
 
-  for (let i = 0; i < DOOR_MODEL_NAMES.length; i++) {
-    const h = getHash(DOOR_MODEL_NAMES[i]);
-    if (h && !uniq[h]) {
-      uniq[h] = true;
-      modelHashes.push(h);
+    for (let i = 0; i < FIXED_ANCHORS.length; i++) {
+        const anchor = FIXED_ANCHORS[i];
+        if (!anchorAppliesToEpisode(anchor, episode)) continue;
+
+        let modelHash = anchor.hash;
+        if (!modelHash && anchor.hashName) modelHash = getHash(anchor.hashName);
+        if (!modelHash) continue;
+
+        activeAnchors.push({
+            hash: modelHash,
+            x: anchor.x,
+            y: anchor.y,
+            z: anchor.z
+        });
     }
-  }
-
-  initialized = true;
 }
 
-function buildGlobalSweepAnchors() {}
+function initializeOnce() {
+    if (initialized) return;
+    buildDoorModelHashes();
+    buildActiveAnchors();
+    initialized = true;
+}
+
+// --- Hot paths ---
 
 function unlockFixedAnchors() {
-  let count = 0;
-
-  for (let i = 0; i < FIXED_ANCHORS.length; i++) {
-    const a = FIXED_ANCHORS[i];
-    let hash = a.hash;
-
-    if (!hash && a.hashName) hash = getHash(a.hashName);
-    if (!hash) continue;
-
-    if (setDoorUnlockedAt(hash, a.x, a.y, a.z)) count++;
-  }
-
-  return count;
+    for (let i = 0; i < activeAnchors.length; i++) {
+        const anchor = activeAnchors[i];
+        setDoorUnlockedAt(anchor.hash, anchor.x, anchor.y, anchor.z);
+    }
 }
-
-// Dead — replaced by unlockGlobalSweepFullOnce called once on start.
-function unlockGlobalSweepBatch() {}
 
 function unlockGlobalSweepFullOnce() {
-  if (!modelHashes.length || !globalSweepAnchors.length) return 0;
-
-  const offsets = [
-    [0.0, 0.0, 0.0],
-    [2.0, 0.0, 0.0], [-2.0, 0.0, 0.0],
-    [0.0, 2.0, 0.0], [0.0, -2.0, 0.0],
-    [4.0, 0.0, 0.0], [-4.0, 0.0, 0.0],
-    [0.0, 4.0, 0.0], [0.0, -4.0, 0.0]
-  ];
-
-  let count = 0;
-  for (let a = 0; a < globalSweepAnchors.length; a++) {
-    const p = globalSweepAnchors[a];
-    if (!p) continue;
-
-    for (let i = 0; i < modelHashes.length; i++) {
-      const h = modelHashes[i];
-
-      for (let j = 0; j < offsets.length; j++) {
-        const o = offsets[j];
-        const x = p.x + o[0];
-        const y = p.y + o[1];
-        const z = p.z + o[2];
-
-        if (setDoorUnlockedAt(h, x, y, z)) count++;
-      }
+    if (!doorModelHashes.length || typeof globalSweepAnchors === "undefined" || !globalSweepAnchors.length) {
+        return;
     }
-  }
 
-  return count;
+    const offsets = [
+        [0.0, 0.0, 0.0],
+        [2.0, 0.0, 0.0], [-2.0, 0.0, 0.0],
+        [0.0, 2.0, 0.0], [0.0, -2.0, 0.0],
+        [4.0, 0.0, 0.0], [-4.0, 0.0, 0.0],
+        [0.0, 4.0, 0.0], [0.0, -4.0, 0.0]
+    ];
+
+    for (let anchorIdx = 0; anchorIdx < globalSweepAnchors.length; anchorIdx++) {
+        const sweepAnchor = globalSweepAnchors[anchorIdx];
+        if (!sweepAnchor) continue;
+
+        for (let modelIdx = 0; modelIdx < doorModelHashes.length; modelIdx++) {
+            const modelHash = doorModelHashes[modelIdx];
+
+            for (let offsetIdx = 0; offsetIdx < offsets.length; offsetIdx++) {
+                const offset = offsets[offsetIdx];
+                setDoorUnlockedAt(
+                    modelHash,
+                    sweepAnchor.x + offset[0],
+                    sweepAnchor.y + offset[1],
+                    sweepAnchor.z + offset[2]
+                );
+            }
+        }
+    }
 }
 
-// Called periodically: kill brains then re-unlock fixed anchors.
-// setStateOfClosestDoorOfType is latched — no need to spam it every tick.
-// We only need to re-unlock after a brain kill cycle (brains are what re-lock doors).
 function applyBrainKillCycle() {
-  if (!initialized) buildHashes();
-  killLockBrains();
-  unlockFixedAnchors();
-}
-
-addEventHandler("OnResourceStart", function(event, resource) {
-  try {
-    if (resource && resource !== thisResource) return;
-    buildHashes();
-
-    if (TEST_SINGLE_SWEEP_NO_REAPPLY) {
-      killLockBrains();
-      unlockFixedAnchors();
-      unlockGlobalSweepFullOnce();
-      showMsg("Door unlock test mode: one sweep applied (no reapply).");
-      return;
-    }
-
-    // Full sweep once on start to open everything in the world.
+    initializeOnce();
     killLockBrains();
     unlockFixedAnchors();
-    unlockGlobalSweepFullOnce();
-    lastBrainKillAt = getNowMs();
-  } catch (e) {}
+}
+
+// --- Event handlers ---
+
+addEventHandler("OnResourceStart", function (event, resource) {
+    try {
+        if (resource && resource !== thisResource) return;
+
+        initializeOnce();
+
+        if (TEST_SINGLE_SWEEP_NO_REAPPLY) {
+            killLockBrains();
+            unlockFixedAnchors();
+            unlockGlobalSweepFullOnce();
+            showMsg("Door unlock test mode: one sweep applied (no reapply).");
+            return;
+        }
+
+        killLockBrains();
+        unlockFixedAnchors();
+        unlockGlobalSweepFullOnce();
+        nextBrainKillAt = getNowMs() + LOCK_BRAIN_KILL_INTERVAL_MS;
+    } catch (e) {
+        console.log(`[err]  OnResourceStart threw: ${e && e.message}`);
+    }
 });
 
-addEventHandler("OnProcess", function() {
-  if (TEST_SINGLE_SWEEP_NO_REAPPLY) return;
-  try {
-    const now = getNowMs();
-    if (isIntervalDue(now, lastBrainKillAt, LOCK_BRAIN_KILL_INTERVAL_MS)) {
-      applyBrainKillCycle();
-      lastBrainKillAt = now;
+addEventHandler("OnProcess", function () {
+    if (TEST_SINGLE_SWEEP_NO_REAPPLY) return;
+
+    const nowMs = getNowMs();
+    if (!isIntervalDue(nowMs, nextBrainKillAt)) return;
+
+    try {
+        applyBrainKillCycle();
+        nextBrainKillAt = nowMs + LOCK_BRAIN_KILL_INTERVAL_MS;
+    } catch (e) {
+        console.log(`[err]  OnProcess threw: ${e && e.message}`);
     }
-  } catch (e) {}
 });
